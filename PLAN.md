@@ -76,6 +76,7 @@ into the folder by hand too.
 2. **Viewer v1**: load a job folder, 3D view, bed tabs, layer slider, info panel.
    ✅ Done 2026-10-31: `python3 -m prusa_workbench.viewer`. See "Viewer v1 notes" below.
 3. **MCP server**: models, transforms, arrange, beds, supports, settings, slicing → job folder.
+   ✅ Done 2026-10-31: `prusa_workbench/mcp_server.py`, 19 tools. See "MCP server notes" below.
 4. **Sending**: PrusaLink first, then Prusa Connect.
 
 ## Open questions
@@ -104,7 +105,25 @@ into the folder by hand too.
   Layers/types/move position are uniforms; draw count stops at the slider, so the layers above it cost nothing.
 - Measured: 13.6 MB / 480k moves (2 plates, 0.10 mm, 100 % infill) loads in ~1.9 s in headless Chromium.
 - Failed beds (only `bed-N.json` with `"error"`) appear as a "failed" tab with the error.
-- To do later: **G-code thumbnails** — the CLI writes none (it renders them with OpenGL), so the MINI screen and
-  Prusa Connect show no preview. The viewer could render them and put them into the G-code before sending.
-  Also: hover a toolpath for info, per-object highlight (`M486` labels are in the G-code), offline copy of three.js.
+- Later: hover a toolpath for info, per-object highlight (`M486` labels are in the G-code).
+  (Offline three.js not needed: Prusa Connect needs the network anyway.)
+
+## MCP server notes
+- Python, official `mcp` SDK 2.x (`MCPServer`, formerly FastMCP), trimesh/numpy/scipy for meshes, Pillow for pictures.
+- A job = folder with `job.json` (beds, objects, 3x3 rotation/scale + footprint position, settings) and `models/<id>.stl`.
+- Per-bed settings: `bed-N.ini` passed with `--load` after the profiles (verified: overrides them).
+  Per-object settings: `<metadata type="object" key=… value=…/>` in the 3MF's `Slic3r_PE_model.config`
+  (verified: supports only on the chosen object, brim only around it).
+- Setting names are checked against `--help-fff` (411 options); typos get suggestions.
+- Bed size, height and thumbnail sizes come from `--save` of the profile combination (MINI: 180x180x180,
+  `16x16/QOI, 220x124/QOI, 200x240/QOI, 380x285/PNG`).
+- **Thumbnails**: rendered by our own small renderer (Pillow, painter's algorithm) and inserted into the G-code
+  header the way PrusaSlicer does; the biggest one is also saved as `bed-N.png` for the viewer.
+- Arrange: MaxRects on footprint rectangles, 90° turns allowed, group centered; overflow → new bed with the same settings.
+  Issues reported per bed: off the bed, too tall, overlapping footprints (convex hulls).
+- Meshes must be re-merged after reading STL (`merge_vertices`), otherwise PrusaSlicer gets a triangle soup
+  and slices differently / fails ("no extrusions in the first layer").
+- Tool errors are re-raised as `ToolError` so Claude sees the message (the SDK hides other exceptions' text).
+- Onshape: verified with the fit test document (4 parts, mm). STEP loading goes through `prusa-slicer --export-stl`
+  but is **untested** (no STEP file at hand).
 

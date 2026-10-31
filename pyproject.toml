@@ -9,10 +9,19 @@ description = "MCP server + viewer for slicing with the PrusaSlicer CLI: one run
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "mcp>=2.3",
+    "numpy",
+    "scipy",          # convex hulls (lay flat)
+    "trimesh>=4",
+    "lxml",           # 3MF loading in trimesh
+    "networkx",       # 3MF loading in trimesh
+    "pillow>=11.3",   # thumbnails + previews (QOI)
+]
 
 [project.scripts]
 prusa-workbench-viewer = "prusa_workbench.viewer.__main__:main"
+prusa-workbench-mcp = "prusa_workbench.mcp_server:main"
 
 [tool.setuptools.packages.find]
 include = ["prusa_workbench*"]

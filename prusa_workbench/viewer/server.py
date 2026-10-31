@@ -66,6 +66,9 @@ class Jobs:
             if f.suffix == ".gcode":
                 bed = {"name": stem, "gcode": f"/files/{name}/{f.name}", "mtime": st.st_mtime, "size": st.st_size}
                 bed.update(self._summary(f, st.st_mtime))
+                png = f.with_suffix(".png")
+                if png.exists() and png.stat().st_mtime >= st.st_mtime - 5:
+                    bed["thumbnail"] = f"/files/{name}/{png.name}?v={int(png.stat().st_mtime)}"
             else:  # failed bed: only the .json with the error
                 bed = {"name": stem, "gcode": None, "mtime": st.st_mtime, "size": 0}
                 bed.update(self._read_json(f) or {"error": "slicing failed"})
@@ -123,10 +126,11 @@ def make_handler(jobs: Jobs):
                     return self._json(job) if job else self._error(HTTPStatus.NOT_FOUND)
                 if path.startswith("/files/"):
                     parts = path[len("/files/"):].split("/")
-                    if len(parts) == 2 and parts[1].endswith(".gcode") and _NAME.match(parts[1]):
+                    if len(parts) == 2 and parts[1].endswith((".gcode", ".png")) and _NAME.match(parts[1]):
                         d = jobs.job_dir(parts[0])
                         if d and (d / parts[1]).is_file():
-                            return self._file(d / parts[1], "text/plain; charset=utf-8")
+                            ctype = "image/png" if parts[1].endswith(".png") else "text/plain; charset=utf-8"
+                            return self._file(d / parts[1], ctype)
                     return self._error(HTTPStatus.NOT_FOUND)
                 rel = "index.html" if path in ("/", "") else path.lstrip("/")
                 f = (STATIC / rel).resolve()

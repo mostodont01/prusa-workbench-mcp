@@ -6,7 +6,38 @@ viewer app shows the result so you can check it and send it to the printer (Prus
 
 Built for an Original Prusa MINI, but nothing ties it to one printer.
 
-**Status:** step 2 of [PLAN.md](PLAN.md): CLI slicing works, viewer v1 works, MCP server and sending are next.
+**Status:** steps 1–3 of [PLAN.md](PLAN.md) done: CLI slicing, viewer, MCP server. Sending to the printer is next.
+
+## Setup
+
+Linux, Python 3.11+, PrusaSlicer as a Flatpak (`com.prusa3d.PrusaSlicer`) with your printer set up in it.
+
+```sh
+python3 -m venv .venv && .venv/bin/pip install -e .
+claude mcp add -s user prusa-workbench -- "$PWD/.venv/bin/prusa-workbench-mcp"
+```
+
+## MCP server
+
+Then just ask Claude, e.g. *"slice the fit test on two beds, the pins at 0.15 mm with 4 perimeters"*.
+It never starts a print: the result opens in the viewer and you send it from there.
+
+| Tool | What it does |
+|---|---|
+| `new_job` / `open_job` / `list_jobs` / `get_job` | jobs live in `~/print-jobs/<date>-<name>/` (`job.json` + models), so work can be resumed |
+| `list_profiles` / `find_setting` | print profiles + filaments; search PrusaSlicer setting names with their current values |
+| `add_model` | STL / 3MF / OBJ / STEP (STEP through PrusaSlicer), with copies |
+| `add_from_onshape` | parts straight from an Onshape part studio (API keys from `~/onshape-mcp/.env`) |
+| `transform` | rotate, scale, lay flat (largest stable face), move |
+| `arrange` / `move_to_bed` / `copy_objects` / `remove_objects` | packing per bed; what doesn't fit goes to a new bed |
+| `set_bed` / `remove_bed` | per bed: print profile, filament, any PrusaSlicer setting, supports |
+| `set_object_settings` | per object: supports (off / auto / build plate only), angle, infill, perimeters, brim… |
+| `preview` | picture of a bed (top + iso, labeled) so Claude can check the layout before slicing |
+| `slice` | all beds in parallel, each with its own settings → G-code with thumbnails → viewer |
+| `open_viewer` | start / open the viewer |
+
+Each bed is sliced from `bed-N.3mf` (placed objects + per-object settings) and `bed-N.ini` (bed overrides on top
+of the profiles); both stay in the job folder next to `bed-N.gcode` and `bed-N.json`.
 
 ## Viewer
 
@@ -14,24 +45,23 @@ Built for an Original Prusa MINI, but nothing ties it to one printer.
 python3 -m prusa_workbench.viewer --open        # http://127.0.0.1:8765, reads ~/print-jobs
 ```
 
-Python 3.11+, no dependencies (three.js loads from a CDN, so the browser needs internet).
+Stdlib only (three.js loads from a CDN, so the browser needs internet). The MCP server starts it by itself.
 Options: `--jobs DIR`, `--port N`, `--job NAME`.
 
 - Shows the newest job and follows new ones as they appear; pick an older job in the **Job** menu.
 - One tab per bed (`*.gcode` in the job folder). Re-sliced beds reload automatically.
 - Toolpaths in PrusaSlicer's colors; click legend items to hide features, tick **Travel** to see travel moves.
 - Keys: `↑/↓` layer, `←/→` move within the layer (`Shift` = ×10), `S` single layer, `1/2/3` iso/top/front, `Z` zoom to print.
-- Side panel: print time, filament, profiles, settings used (● = changed from the profile), objects, warnings.
+- Side panel: thumbnail, print time, filament, profiles, settings used (● = changed from the profile), objects with
+  their own settings, warnings.
 
 A job folder is just `~/print-jobs/<job>/bed-N.gcode` (+ optional `bed-N.json` summary). G-code dropped in by hand works too.
 
-## Slicing test
+## Smoke test without Claude
 
 ```sh
-python3 scripts/cli_test.py     # slices the robocars fit test on 2 beds with different settings
+.venv/bin/python scripts/cli_test.py     # the robocars fit test on 2 beds with different settings
 ```
-
-Needs PrusaSlicer as a Flatpak (`com.prusa3d.PrusaSlicer`). See "CLI findings" in PLAN.md.
 
 ## License
 

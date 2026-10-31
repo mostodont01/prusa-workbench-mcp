@@ -548,7 +548,7 @@ function fmtSetting(key, v, s) {
 }
 
 function supportsText(s) {
-  if (s.support_material === undefined) return null;
+  if (s.support_material === undefined) return s.support_material_threshold ? `threshold ${s.support_material_threshold}°` : null;
   if (s.support_material !== '1') return 'off';
   // PrusaSlicer's default: supports only where painted. Nothing is painted from the CLI, so effectively off.
   if (s.support_material_auto === '0') return 'only where painted';
@@ -582,6 +582,7 @@ function renderInfo(bed) {
     <h2>${esc(bed.name)}</h2>
     <div class="sub">${esc(state.job.name)}${bed.gcode ? ` · ${(bed.size / 1e6).toFixed(1)} MB` : ''}${bed.slice_seconds ? ` · sliced in ${bed.slice_seconds} s` : ''}</div>
     ${bed.error ? `<p class="err">${esc(bed.error)}</p>` : ''}
+    ${bed.thumbnail ? `<img class="thumb" src="${esc(bed.thumbnail)}" alt="Thumbnail stored in the G-code">` : ''}
     <div class="stats">
       ${stat(bed.print_time, 'print time', true)}
       ${stat(filament, `filament${bed.filament_m != null ? ` · ${bed.filament_m} m` : ''}`)}
@@ -600,7 +601,14 @@ function renderInfo(bed) {
     ${overrides.size ? `<div class="note"><span class="dot">●</span> changed from the profile</div>` : ''}
 
     <h3>Objects</h3>
-    <ul class="plain">${(bed.objects ?? []).map((o) => `<li>${esc(o)}</li>`).join('') || '<li class="note">–</li>'}</ul>
+    <ul class="plain">${(bed.objects ?? []).map((o) => {
+      const os = bed.object_settings?.[o];
+      if (!os) return `<li>${esc(o)}</li>`;
+      const sup = supportsText(os);
+      const rest = Object.entries(os).filter(([k]) => !k.startsWith('support_material')).map(([k, v]) => `${k} ${v}`);
+      const txt = [sup ? `supports ${sup}` : null, ...rest].filter(Boolean).join(', ');
+      return `<li>${esc(o)}<div class="note"><span class="dot">●</span> ${esc(txt)}</div></li>`;
+    }).join('') || '<li class="note">–</li>'}</ul>
 
     <h3>Warnings</h3>
     ${warnings.length ? `<ul class="plain warn">${warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : '<div class="ok">None reported</div>'}
