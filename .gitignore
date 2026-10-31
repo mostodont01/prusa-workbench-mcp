@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Secrets / local config
+.env
+*.token
+
+# Slicer output and test jobs
+*.gcode
+*.bgcode
+print-jobs/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
