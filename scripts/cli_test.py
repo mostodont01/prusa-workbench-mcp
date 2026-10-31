@@ -14,10 +14,14 @@ import json
 import re
 import struct
 import subprocess
+import sys
 import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from prusa_workbench.gcode import parse_gcode  # noqa: E402
 
 PRUSASLICER = ["flatpak", "run", "--command=prusa-slicer", "com.prusa3d.PrusaSlicer"]
 PRINTER = "Original Prusa MINI & MINI+ Input Shaper"
@@ -161,37 +165,11 @@ def slice_bed(job: Path, bed: Bed) -> dict:
         info["error"] = (proc.stdout + proc.stderr).strip()[-500:] or f"no G-code (exit {proc.returncode})"
     else:
         info.update(parse_gcode(gcode))
+    # Anything PrusaSlicer prints besides progress lines ("10 => Processing…") is worth showing.
+    info["warnings"] = [ln.strip() for ln in (proc.stdout + proc.stderr).splitlines()
+                        if ln.strip() and not re.match(r"^\d+ => |^Slicing result exported", ln.strip())]
     (job / f"{bed.name}.json").write_text(json.dumps(info, indent=2) + "\n")
     return info
-
-
-def parse_gcode(path: Path) -> dict:
-    """Pull summary + the settings used out of PrusaSlicer's trailing comments."""
-    meta: dict[str, str] = {}
-    types: dict[str, int] = {}
-    layers = 0
-    with path.open() as f:
-        for line in f:
-            if line.startswith(";TYPE:"):
-                t = line[6:].strip()
-                types[t] = types.get(t, 0) + 1
-            elif line.startswith(";LAYER_CHANGE"):
-                layers += 1
-            elif line.startswith("; ") and " = " in line:
-                k, v = line[2:].rstrip("\n").split(" = ", 1)
-                meta[k] = v
-    keys = ["printer_settings_id", "print_settings_id", "filament_settings_id", "layer_height",
-            "first_layer_height", "perimeters", "fill_density", "fill_pattern", "top_solid_layers",
-            "bottom_solid_layers", "support_material", "brim_width", "temperature", "bed_temperature"]
-    return {
-        "print_time": meta.get("estimated printing time (normal mode)"),
-        "filament_g": float(meta.get("total filament used [g]", "nan")),
-        "filament_m": round(float(meta.get("filament used [mm]", "nan")) / 1000, 2),
-        "layers": layers,
-        "feature_types": types,
-        "objects": [o["name"] for o in json.loads(meta.get("objects_info", '{"objects":[]}'))["objects"]],
-        "settings": {k: meta[k].strip('"') for k in keys if k in meta},
-    }
 
 
 def main() -> None:

@@ -74,6 +74,7 @@ into the folder by hand too.
    2 beds with different settings. Confirm the profiles load and the output is correct.
    ✅ Done 2026-10-31, CLI only (no window): `scripts/cli_test.py`. See "CLI findings" below.
 2. **Viewer v1**: load a job folder, 3D view, bed tabs, layer slider, info panel.
+   ✅ Done 2026-10-31: `python3 -m prusa_workbench.viewer`. See "Viewer v1 notes" below.
 3. **MCP server**: models, transforms, arrange, beds, supports, settings, slicing → job folder.
 4. **Sending**: PrusaLink first, then Prusa Connect.
 
@@ -94,3 +95,16 @@ into the folder by hand too.
 - **Objects off the bed → no G-code but exit code 0** ("All objects are outside of the print volume"). Success = the output file exists.
 - Two beds in parallel: ~8 s total. The G-code has `;TYPE:` / `;LAYER_CHANGE`, and the footer has time, filament, `objects_info`
   (names + outlines) and the full settings dump, which is everything the job's `bed-N.json` and the viewer need.
+
+## Viewer v1 notes
+- Python stdlib server (`prusa_workbench/viewer/server.py`) + one static page with three.js 0.170 from jsDelivr.
+  API: `/api/ping`, `/api/jobs`, `/api/jobs/<job>`, `/files/<job>/<bed>.gcode`. The page polls every 2 s.
+- G-code is parsed in a Web Worker (G1 + G2/G3 arcs, `;TYPE:`, `;WIDTH:`, `;HEIGHT:`, `;LAYER_CHANGE`/`;Z:`).
+  Every extrusion is one instance of a unit box stretched in the vertex shader, so one bed = one draw call.
+  Layers/types/move position are uniforms; draw count stops at the slider, so the layers above it cost nothing.
+- Measured: 13.6 MB / 480k moves (2 plates, 0.10 mm, 100 % infill) loads in ~1.9 s in headless Chromium.
+- Failed beds (only `bed-N.json` with `"error"`) appear as a "failed" tab with the error.
+- To do later: **G-code thumbnails** — the CLI writes none (it renders them with OpenGL), so the MINI screen and
+  Prusa Connect show no preview. The viewer could render them and put them into the G-code before sending.
+  Also: hover a toolpath for info, per-object highlight (`M486` labels are in the G-code), offline copy of three.js.
+

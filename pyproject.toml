@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prusa-workbench-mcp"
+version = "0.1.0"
+description = "MCP server + viewer for slicing with the PrusaSlicer CLI: one run per bed with its own settings, preview, send to the printer"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+prusa-workbench-viewer = "prusa_workbench.viewer.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["prusa_workbench*"]
+
+[tool.setuptools.package-data]
+"prusa_workbench.viewer" = ["static/*"]

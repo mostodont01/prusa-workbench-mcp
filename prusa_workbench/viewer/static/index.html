@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Print Workbench</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <header>
+    <div class="brand">prusa-workbench</div>
+    <label class="job">
+      <span>Job</span>
+      <select id="job"></select>
+    </label>
+    <nav id="tabs" aria-label="Beds"></nav>
+    <div class="spacer"></div>
+    <button id="send" disabled title="Sending to the printer comes in step 4 (PrusaLink, then Prusa Connect)">Send to printer</button>
+  </header>
+
+  <main>
+    <section id="view">
+      <canvas id="c"></canvas>
+
+      <div id="views" class="panel">
+        <button data-view="iso" title="Iso view (1)">Iso</button>
+        <button data-view="top" title="Top view (2)">Top</button>
+        <button data-view="front" title="Front view (3)">Front</button>
+        <button data-view="fit" title="Zoom to the print (Z)">Fit</button>
+      </div>
+
+      <div id="legend" class="panel"></div>
+
+      <div id="layerbox" class="panel">
+        <div id="layerTop" class="num"></div>
+        <input type="range" id="layer" min="0" max="0" value="0" orient="vertical" aria-label="Top layer">
+        <div id="layerBottom" class="num">1</div>
+        <label class="single" title="Show only this layer (S)"><input type="checkbox" id="single"> only</label>
+      </div>
+
+      <div id="movebox" class="panel">
+        <input type="range" id="move" min="0" max="0" value="0" aria-label="Moves in the top layer">
+        <div id="moveLabel" class="num"></div>
+      </div>
+
+      <div id="status"><div class="msg"></div><div class="bar"><div></div></div></div>
+    </section>
+
+    <aside id="info"></aside>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
