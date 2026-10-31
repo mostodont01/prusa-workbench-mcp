@@ -189,3 +189,43 @@ ul.warn li::before { content: "⚠ "; }
   #movebox { left: 10px; bottom: auto; top: 50px; right: 84px; }
   #legend { display: none; }
 }
+
+/* ---------- send dialog ---------- */
+dialog#sendDialog {
+  width: min(460px, calc(100vw - 32px));
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+}
+dialog#sendDialog::backdrop { background: rgba(0, 0, 0, .55); }
+#sendDialog h2 { font-size: 16px; margin: 0 0 12px; }
+#sendDialog p { margin: 0 0 10px; }
+#sendDialog .what { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
+#sendDialog .what b { font-weight: 600; }
+#sendDialog label.field { display: block; margin: 10px 0 4px; color: var(--muted); font-size: 12px; }
+#sendDialog select, #sendDialog input[type=text] {
+  width: 100%; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px;
+  max-width: none;
+}
+#sendDialog .warn { color: var(--warn); }
+#sendDialog .warn::before { content: "⚠ "; }
+#sendDialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; align-items: center; }
+#sendDialog .actions .left { margin-right: auto; }
+#sendDialog button {
+  border-radius: 6px; padding: 6px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--panel-2);
+}
+#sendDialog button.primary { background: var(--accent); color: var(--accent-text); border: 0; font-weight: 600; }
+#sendDialog button.link { background: none; border: 0; color: var(--muted); padding: 6px 0; text-decoration: underline; }
+#sendDialog button:disabled { opacity: .5; cursor: not-allowed; }
+#sendDialog a { color: var(--accent); }
+.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -1px; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#sendDialog fieldset.actionsel { border: 0; padding: 0; margin: 10px 0 0; }
+#sendDialog fieldset.actionsel legend { padding: 0; margin-bottom: 4px; }
+#sendDialog fieldset.actionsel label { display: flex; gap: 8px; align-items: center; padding: 3px 0; cursor: pointer; }
+#sendDialog fieldset.actionsel input { accent-color: var(--accent); margin: 0; }
+#sendDialog #actionHint { margin-top: 6px; min-height: 2.6em; }

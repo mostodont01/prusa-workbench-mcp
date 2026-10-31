@@ -27,7 +27,7 @@ from . import mesh as mz
 from . import render, slicer, threemf
 from .config import JOBS_DIR, SPACING
 
-OUTPUT_SUFFIXES = (".gcode", ".json", ".3mf", ".ini", ".png", ".log")
+OUTPUT_SUFFIXES = (".gcode", ".bgcode", ".json", ".3mf", ".ini", ".png", ".log")
 
 
 @dataclass
@@ -368,7 +368,7 @@ class Job:
         model, ini, out = (self.dir / f"{bed.name}{s}" for s in (".3mf", ".ini", ".gcode"))
         threemf.write(model, placed)
         ini.write_text("".join(f"{k} = {v}\n" for k, v in bed.settings.items()) or "# no overrides\n")
-        for stale in (".png", ".json"):
+        for stale in (".png", ".json", ".bgcode"):
             (self.dir / f"{bed.name}{stale}").unlink(missing_ok=True)
 
         res = slicer.slice_3mf(model, ini, out, self.printer, bed.print_profile, bed.filament)
@@ -397,9 +397,12 @@ class Job:
     def _thumbnails(self, gcode_path: Path, meshes: list[trimesh.Trimesh]) -> None:
         specs = gc.thumbnail_specs(gcode_path) or [(220, 124, "PNG")]
         colored = [("", m, render.ORANGE) for m in meshes]
+        bed = self.geometry()
         thumbs, biggest = [], None
         for w, h, fmt in specs:
-            img = render.render(colored, (w, h), "iso", ss=4 if max(w, h) < 64 else 3)
+            # Like PrusaSlicer: the objects standing on (a cropped piece of) the bed.
+            img = render.render(colored, (w, h), "iso", bed=bed, fit_bed=False, margin=0.1,
+                                ss=4 if max(w, h) < 64 else 3)
             thumbs.append((w, h, fmt, render.encode(img, fmt)))
             if biggest is None or w * h > biggest.size[0] * biggest.size[1]:
                 biggest = img

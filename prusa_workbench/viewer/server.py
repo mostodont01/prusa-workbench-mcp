@@ -7,24 +7,81 @@ the summary, overrides and warnings; for G-code dropped in by hand the summary i
     GET /api/ping                 {"app": "prusa-workbench-viewer", ...}  (lets the MCP server find a running viewer)
     GET /api/jobs                 jobs, newest first
     GET /api/jobs/<job>           beds of a job with their summaries
-    GET /files/<job>/<bed>.gcode  raw G-code
+    GET /files/<job>/<bed>.gcode  raw G-code (and <bed>.png thumbnails)
+
+    Prusa Connect (sending is the user's decision, made here; nothing else in the project sends):
+    GET  /api/connect             logged in? printers
+    POST /api/connect/login       open the Prusa Account login window (GTK, system python3)
+    GET  /api/connect/login       is the login window still open, last result
+    POST /api/connect/logout
+    POST /api/send                {job, bed, printer_uuid, filename, action: upload|queue|print}
+                                  upload (binary G-code when possible), then optionally queue it (print = first
+                                  in the queue: starts once the file is on a printer a person has set READY)
+POST requests need the X-Workbench header (blocks cross-site form posts) and every /api request a local Host
+header (blocks DNS rebinding).
 """
 from __future__ import annotations
 
 import json
 import mimetypes
+import os
 import re
+import subprocess
 import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+from .. import connect, sendfile
 from ..gcode import parse_gcode
 
 APP = "prusa-workbench-viewer"
 STATIC = Path(__file__).parent / "static"
 _NAME = re.compile(r"^[^/\\]+$")
+REPO = Path(__file__).resolve().parents[2]
+GTK_PYTHON = os.environ.get("PRUSA_WORKBENCH_GTK_PYTHON", "/usr/bin/python3")
+
+
+class Login:
+    """The Prusa Account login window, run as a separate process (it needs GTK/WebKit from the system python)."""
+    def __init__(self):
+        self.proc: subprocess.Popen | None = None
+        self.result: dict | None = None
+        self._lock = threading.Lock()
+
+    def start(self) -> dict:
+        with self._lock:
+            if self.proc and self.proc.poll() is None:
+                return {"started": False, "running": True}
+            env = dict(os.environ, PYTHONPATH=str(REPO))
+            self.result = None
+            self.proc = subprocess.Popen([GTK_PYTHON, "-m", "prusa_workbench.connect_login"], cwd=REPO, env=env,
+                                         stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                         text=True, start_new_session=True)
+            threading.Thread(target=self._wait, args=(self.proc,), daemon=True).start()
+            return {"started": True, "running": True}
+
+    def _wait(self, proc):
+        out = proc.communicate()[0] or ""
+        line = out.strip().splitlines()[-1] if out.strip() else ""
+        try:
+            res = json.loads(line)
+        except ValueError:
+            res = {"ok": False, "error": f"login window exited ({proc.returncode})"}
+        with self._lock:
+            self.result = res
+
+    def state(self) -> dict:
+        with self._lock:
+            return {"running": bool(self.proc and self.proc.poll() is None), "result": self.result}
+
+
+def _safe_filename(name: str) -> str:
+    name = re.sub(r"[^A-Za-z0-9._ -]+", "_", name).strip(" ._") or "print"
+    if not name.lower().endswith(".gcode"):
+        name += ".gcode"
+    return name[-80:]
 
 
 def _natural(s: str):
@@ -107,9 +164,64 @@ class Jobs:
         return info
 
 
-def make_handler(jobs: Jobs):
+def make_handler(jobs: Jobs, login: Login):
     class Handler(BaseHTTPRequestHandler):
         server_version = APP
+
+        def _local(self) -> bool:
+            host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]")
+            return host in ("127.0.0.1", "localhost", "::1")
+
+        def do_POST(self):
+            path = urlsplit(self.path).path
+            try:
+                if not self._local() or self.headers.get("X-Workbench") != "1":
+                    return self._error(HTTPStatus.FORBIDDEN)
+                length = int(self.headers.get("Content-Length") or 0)
+                body = json.loads(self.rfile.read(length) or b"{}") if length else {}
+                if path == "/api/connect/login":
+                    return self._json(login.start())
+                if path == "/api/connect/logout":
+                    connect.logout()
+                    return self._json({"logged_in": False})
+                if path == "/api/send":
+                    return self._send(body)
+                return self._error(HTTPStatus.NOT_FOUND)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            except ValueError as e:
+                self._json({"ok": False, "error": f"bad request: {e}"}, HTTPStatus.BAD_REQUEST)
+
+        def _send(self, body: dict):
+            d = jobs.job_dir(str(body.get("job", "")))
+            bed = str(body.get("bed", ""))
+            g = d / f"{bed}.gcode" if d and _NAME.match(bed + ".gcode") else None
+            if not g or not g.is_file():
+                return self._json({"ok": False, "error": "no such G-code"}, HTTPStatus.NOT_FOUND)
+            uuid = str(body.get("printer_uuid") or "")
+            if not uuid:
+                return self._json({"ok": False, "error": "no printer chosen"}, HTTPStatus.BAD_REQUEST)
+            action = str(body.get("action") or "upload")
+            if action not in ("upload", "queue", "print"):
+                return self._json({"ok": False, "error": f"unknown action {action}"}, HTTPStatus.BAD_REQUEST)
+            try:
+                p = connect.printer(uuid)
+                f, kind, note = sendfile.prepare(d, bed, p.get("extensions"))
+                name = _safe_filename(str(body.get("filename") or f"{d.name}-{bed}"))
+                name = re.sub(r"\.(b?gcode)$", "", name, flags=re.I) + f.suffix
+                res = connect.upload(f, uuid, name, team_id=p.get("team_id"))
+                res.update({"format": kind, "note": note, "printer_state": p.get("state"), "action": action})
+                if action in ("queue", "print"):
+                    try:
+                        res["queue"] = connect.enqueue(uuid, res["team_id"], res.get("hash"), first=(action == "print"))
+                    except Exception as e:   # the upload itself worked; say so
+                        res["queue_error"] = str(e)
+            except connect.LoginRequired as e:
+                return self._json({"ok": False, "login_required": True, "error": str(e)})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)})
+            connect.save_prefs(printer_uuid=uuid, action=action)
+            return self._json({"ok": True, **res})
 
         def log_message(self, fmt, *args):  # quiet; errors still go through log_error
             pass
@@ -119,6 +231,12 @@ def make_handler(jobs: Jobs):
             try:
                 if path == "/api/ping":
                     return self._json({"app": APP, "jobs_dir": str(jobs.root)})
+                if path.startswith("/api/") and not self._local():
+                    return self._error(HTTPStatus.FORBIDDEN)
+                if path == "/api/connect":
+                    return self._json(connect.status())
+                if path == "/api/connect/login":
+                    return self._json(login.state())
                 if path == "/api/jobs":
                     return self._json(jobs.list())
                 if path.startswith("/api/jobs/"):
@@ -143,9 +261,9 @@ def make_handler(jobs: Jobs):
             except (BrokenPipeError, ConnectionResetError):
                 pass
 
-        def _json(self, obj):
+        def _json(self, obj, status: HTTPStatus = HTTPStatus.OK):
             body = json.dumps(obj).encode()
-            self.send_response(HTTPStatus.OK)
+            self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
@@ -169,4 +287,4 @@ def make_handler(jobs: Jobs):
 
 
 def serve(jobs_dir: Path, host: str = "127.0.0.1", port: int = 8765) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer((host, port), make_handler(Jobs(jobs_dir)))
+    return ThreadingHTTPServer((host, port), make_handler(Jobs(jobs_dir), Login()))

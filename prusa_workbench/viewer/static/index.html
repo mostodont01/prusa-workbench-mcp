@@ -23,7 +23,7 @@
     </label>
     <nav id="tabs" aria-label="Beds"></nav>
     <div class="spacer"></div>
-    <button id="send" disabled title="Sending to the printer comes in step 4 (PrusaLink, then Prusa Connect)">Send to printer</button>
+    <button id="send" disabled title="Upload this bed's G-code to a printer through Prusa Connect">Send to printer</button>
   </header>
 
   <main>
@@ -56,6 +56,14 @@
 
     <aside id="info"></aside>
   </main>
+
+  <dialog id="sendDialog" aria-labelledby="sendTitle">
+    <form method="dialog" id="sendForm">
+      <h2 id="sendTitle">Send to printer</h2>
+      <div id="sendBody"></div>
+      <div class="actions" id="sendActions"></div>
+    </form>
+  </dialog>
 
   <script type="module" src="app.js"></script>
 </body>

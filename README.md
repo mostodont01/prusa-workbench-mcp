@@ -6,7 +6,8 @@ viewer app shows the result so you can check it and send it to the printer (Prus
 
 Built for an Original Prusa MINI, but nothing ties it to one printer.
 
-**Status:** steps 1–3 of [PLAN.md](PLAN.md) done: CLI slicing, viewer, MCP server. Sending to the printer is next.
+**Status:** steps 1–3 of [PLAN.md](PLAN.md) done (CLI slicing, viewer, MCP server); sending through Prusa Connect
+is built and being tested, PrusaLink comes after.
 
 ## Setup
 
@@ -52,10 +53,25 @@ Options: `--jobs DIR`, `--port N`, `--job NAME`.
 - One tab per bed (`*.gcode` in the job folder). Re-sliced beds reload automatically.
 - Toolpaths in PrusaSlicer's colors; click legend items to hide features, tick **Travel** to see travel moves.
 - Keys: `↑/↓` layer, `←/→` move within the layer (`Shift` = ×10), `S` single layer, `1/2/3` iso/top/front, `Z` zoom to print.
+- **Send to printer** uploads the bed through Prusa Connect (see below): just upload, add to the queue, or print
+  now (first in the queue; it starts once the printer is set READY, i.e. someone confirmed the bed is clear).
 - Side panel: thumbnail, print time, filament, profiles, settings used (● = changed from the profile), objects with
   their own settings, warnings.
 
 A job folder is just `~/print-jobs/<job>/bed-N.gcode` (+ optional `bed-N.json` summary). G-code dropped in by hand works too.
+
+## Prusa Connect
+
+Prusa Connect has no official upload API, so this does what PrusaSlicer does: log in to your Prusa Account with
+PrusaSlicer's public OAuth client, then register the upload and PUT the file. It may break if Prusa changes things.
+
+- **Log in** from the Send dialog: a small sign-in window opens (GTK + WebKit, run with the system `python3`;
+  needs `gir1.2-webkit2-4.1`). It catches the `prusaslicer://login` redirect itself, so PrusaSlicer's own login is
+  not touched.
+- It sends **binary G-code** (`.bgcode`, about a third of the size) when the printer takes it: PrusaSlicer makes
+  it from the bed's saved inputs at send time, with our thumbnails added. The MINI's Wi-Fi is the slow part.
+- Tokens are kept in `~/.config/prusa-workbench/connect-tokens.json` (mode 600). **Log out** in the dialog deletes them.
+- The viewer only accepts these requests from `localhost` pages (custom header + Host check).
 
 ## Smoke test without Claude
 

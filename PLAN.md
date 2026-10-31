@@ -77,7 +77,9 @@ into the folder by hand too.
    ✅ Done 2026-10-31: `python3 -m prusa_workbench.viewer`. See "Viewer v1 notes" below.
 3. **MCP server**: models, transforms, arrange, beds, supports, settings, slicing → job folder.
    ✅ Done 2026-10-31: `prusa_workbench/mcp_server.py`, 19 tools. See "MCP server notes" below.
-4. **Sending**: PrusaLink first, then Prusa Connect.
+4. **Sending**: ~~PrusaLink first, then Prusa Connect~~ → Prusa Connect first (the user prefers it; it's on Wi-Fi anyway).
+   Built 2026-11-01: `connect.py`, `connect_login.py`, Send dialog in the viewer. Login + upload verified by the user.
+   Then: binary G-code for sending, "add to queue" / "print now", thumbnails with the bed under the objects.
 
 ## Open questions
 - ~~Project and app name.~~ → **prusa-workbench-mcp** (decided 2026-10-31).
@@ -117,8 +119,9 @@ into the folder by hand too.
 - Setting names are checked against `--help-fff` (411 options); typos get suggestions.
 - Bed size, height and thumbnail sizes come from `--save` of the profile combination (MINI: 180x180x180,
   `16x16/QOI, 220x124/QOI, 200x240/QOI, 380x285/PNG`).
-- **Thumbnails**: rendered by our own small renderer (Pillow, painter's algorithm) and inserted into the G-code
-  header the way PrusaSlicer does; the biggest one is also saved as `bed-N.png` for the viewer.
+- **Thumbnails**: rendered by our own small renderer (Pillow, painter's algorithm), objects standing on a cropped
+  piece of the bed like PrusaSlicer's, inserted into the G-code header the way PrusaSlicer does; the biggest one is
+  also saved as `bed-N.png` for the viewer.
 - Arrange: MaxRects on footprint rectangles, 90° turns allowed, group centered; overflow → new bed with the same settings.
   Issues reported per bed: off the bed, too tall, overlapping footprints (convex hulls).
 - Meshes must be re-merged after reading STL (`merge_vertices`), otherwise PrusaSlicer gets a triangle soup
@@ -126,4 +129,28 @@ into the folder by hand too.
 - Tool errors are re-raised as `ToolError` so Claude sees the message (the SDK hides other exceptions' text).
 - Onshape: verified with the fit test document (4 parts, mm). STEP loading goes through `prusa-slicer --export-stl`
   but is **untested** (no STEP file at hand).
+
+## Prusa Connect notes
+- Login: Prusa Account OAuth2 + PKCE, PrusaSlicer's public client id `oamhmhZez7opFosnwzElIgE2oGgI2iJORSkw587O`,
+  redirect `prusaslicer://login`, scope `basic_info` (from gioelemo/prusa-mcp, GPL: facts only, no code copied).
+  `prusaslicer://` is registered to the PrusaSlicer Flatpak here, so a normal browser would hand the code to
+  PrusaSlicer. Our window (GTK3 + WebKit2 4.1 from the system python; the venv has no `gi`) ignores that navigation
+  in `decide-policy` and exchanges the code itself. Ephemeral WebKit context (no cookies kept).
+- Upload (from PrusaSlicer's `PrintHostPrusaConnect.cpp`): `POST /app/users/teams/<team>/uploads`
+  `{filename, size, printer_uuid}` → `{id, path, state}`, then `PUT /app/teams/<team>/files/raw?upload_id=<id>`
+  with `Content-Type: text/x.gcode`. Team id from the printer list / `/app/printers/<uuid>`.
+- Queue / print now (from BogdanStamenovic/prusa-connect, MIT): `POST /app/printers/<uuid>/queue`
+  `{hash, team_id, position}` with the hash from the upload. "Print now" = position 0: Connect starts it once the
+  file is on the printer **and the printer is READY** (a person pressed "Set ready" = bed clear). We never set READY.
+  "Add to queue" = position = current queue length (`GET /app/printers/<uuid>/queue` → `pager.total`).
+- **Upload speed**: the Connect API answers in ~0.1 s; the slow part is Connect copying the file to the MINI over
+  its Wi-Fi. So we send **binary G-code** (what PrusaSlicer sends to a MINI: the profile has `binary_gcode = 1`),
+  about 1/3 of the text size (3.9 MB → 1.3 MB). Made at send time by slicing `bed-N.3mf` + `bed-N.ini` again with
+  `--binary-gcode` (~3–6 s, cached as `bed-N.bgcode`), then our thumbnails are added as thumbnail blocks
+  (`bgcode.py`; block layout and CRC32-over-header+params+data checked on PrusaSlicer's own output, 17/17).
+  Prusa's converter (pybgcode) isn't on PyPI, and writing the firmware-facing compression ourselves is riskier.
+- The printer record also contains its PrusaLink/Connect API keys: `connect.printers()` keeps only the fields we use.
+- Python's default User-Agent got a 403 from account.prusa3d.com; requests send an honest
+  `prusa-workbench/0.1 (+repo URL)`. Whether that is accepted: see the first real login.
+- The viewer's POST endpoints need `X-Workbench: 1` and a local Host header (CSRF / DNS rebinding).
 

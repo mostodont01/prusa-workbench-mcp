@@ -379,6 +379,7 @@ function disposeEntry(c) {
 
 async function showBed() {
   const bed = state.job?.beds.find((b) => b.name === state.bed);
+  document.getElementById('send').disabled = !(bed && bed.gcode);
   if (state.shown) {
     for (const m of Object.values(state.shown.meshes)) if (m) scene.remove(m);
     state.shown = null;
@@ -516,6 +517,7 @@ function step(input, d) {
 }
 
 document.addEventListener('keydown', (ev) => {
+  if (document.getElementById('sendDialog').open) return;
   const tag = ev.target.tagName;
   if (tag === 'SELECT' || (tag === 'INPUT' && ev.target.type !== 'checkbox')) return;
   const k = ev.shiftKey ? 10 : 1;
@@ -658,6 +660,162 @@ async function poll() {
   } catch { /* server restarting; try again next tick */ }
   setTimeout(poll, POLL_MS);
 }
+
+// ---------- send to printer (Prusa Connect) ----------
+
+const dlg = document.getElementById('sendDialog');
+const dlgBody = document.getElementById('sendBody');
+const dlgActions = document.getElementById('sendActions');
+let connectInfo = null;
+
+async function post(url, body) {
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Workbench': '1' },
+    body: JSON.stringify(body ?? {}) });
+  return r.json().catch(() => ({ ok: false, error: `HTTP ${r.status}` }));
+}
+
+function currentBed() { return state.job?.beds.find((b) => b.name === state.bed); }
+
+function dlgSet(body, actions) {
+  dlgBody.innerHTML = body;
+  dlgActions.innerHTML = actions;
+}
+
+function modelMismatch(bed, printer) {
+  const norm = (x) => (x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const p = norm(printer?.model);
+  const model = bed.settings?.printer_model, profile = bed.settings?.printer_settings_id;
+  if (!p || !(model || profile)) return null;
+  const g = norm(model);
+  const ok = g ? (g.includes(p) || p.includes(g)) : norm(profile).includes(p);   // older summaries: profile name only
+  return ok ? null : `The G-code was sliced for ${model || profile}, this printer is a ${printer.model}.`;
+}
+
+async function openSend() {
+  const bed = currentBed();
+  if (!bed?.gcode) return;
+  dlg.showModal();
+  dlgSet('<p><span class="spinner"></span>Checking Prusa Connect…</p>', '<button value="cancel">Cancel</button>');
+  connectInfo = await fetch('/api/connect', { cache: 'no-store' }).then((r) => r.json()).catch((e) => ({ logged_in: false, error: String(e) }));
+  if (!dlg.open) return;
+  connectInfo.logged_in ? renderSendForm(bed) : renderLogin(connectInfo.error);
+}
+
+function renderLogin(error) {
+  dlgSet(`<p>Sending goes through <b>Prusa Connect</b>. Log in once with your Prusa Account; a sign-in window opens on your desktop.</p>
+    ${error ? `<p class="warn">${esc(error)}</p>` : ''}`,
+    `<button value="cancel">Cancel</button><button type="button" class="primary" id="loginBtn">Log in to Prusa Connect</button>`);
+}
+
+async function doLogin() {
+  const r = await post('/api/connect/login');
+  if (r.ok === false) { renderLogin(r.error); return; }
+  dlgSet('<p><span class="spinner"></span>Sign in in the window that opened on your desktop…</p>', '<button value="cancel">Cancel</button>');
+  for (;;) {
+    await new Promise((res) => setTimeout(res, 1000));
+    if (!dlg.open) return;
+    const st = await fetch('/api/connect/login', { cache: 'no-store' }).then((x) => x.json()).catch(() => null);
+    if (st && !st.running) {
+      if (st.result?.ok) { openSend(); } else { renderLogin(st.result?.error || 'Login window closed.'); }
+      return;
+    }
+  }
+}
+
+function renderSendForm(bed) {
+  const printers = connectInfo.printers || [];
+  if (!printers.length) {
+    dlgSet(`<p>Logged in, but no printers were found in your Prusa Connect account.</p>
+      ${connectInfo.error ? `<p class="warn">${esc(connectInfo.error)}</p>` : ''}`,
+      `<button type="button" class="link left" id="logoutBtn">Log out</button><button value="cancel">Close</button>`);
+    return;
+  }
+  const def = printers.find((p) => p.uuid === connectInfo.default_printer) ?? printers[0];
+  const warnings = bed.warnings ?? [];
+  dlgSet(`
+    <div class="what"><b>${esc(state.job.name)} / ${esc(bed.name)}</b><br>
+      ${esc(bed.print_time ?? '')}${bed.filament_g != null ? ` · ${bed.filament_g.toFixed(1)} g` : ''} ·
+      ${esc(bed.settings?.print_settings_id ?? '')} · ${esc(bed.settings?.filament_settings_id ?? '')}</div>
+    ${warnings.map((w) => `<p class="warn">${esc(w)}</p>`).join('')}
+    <label class="field" for="printerSel">Printer</label>
+    <select id="printerSel">${printers.map((p) => `<option value="${esc(p.uuid)}" ${p.uuid === def.uuid ? 'selected' : ''}>
+      ${esc(p.name)}${p.model ? ` — ${esc(p.model)}` : ''}${p.state ? ` — ${esc(p.state)}` : ''}</option>`).join('')}</select>
+    <div id="printerWarn"></div>
+    <label class="field" for="fileName">File name on the printer</label>
+    <input type="text" id="fileName" value="${esc(`${state.job.name}-${bed.name}`)}" spellcheck="false">
+    <fieldset class="actionsel">
+      <legend class="field">After uploading</legend>
+      <label><input type="radio" name="sendAction" value="upload"> Just upload</label>
+      <label><input type="radio" name="sendAction" value="queue"> Add to the end of the queue</label>
+      <label><input type="radio" name="sendAction" value="print"> Print now (first in the queue)</label>
+    </fieldset>
+    <p class="note" id="actionHint"></p>`,
+    `<button type="button" class="link left" id="logoutBtn">Log out</button>
+     <button value="cancel">Cancel</button><button type="button" class="primary" id="uploadBtn">Upload</button>`);
+  const sel = document.getElementById('printerSel');
+  const radios = [...document.querySelectorAll('input[name=sendAction]')];
+  (radios.find((r) => r.value === connectInfo.default_action) ?? radios[0]).checked = true;
+  const update = () => {
+    const p = printers.find((x) => x.uuid === sel.value);
+    const msgs = [modelMismatch(bed, p), p?.state && /OFFLINE/i.test(p.state) ? 'The printer is offline in Prusa Connect.' : null].filter(Boolean);
+    document.getElementById('printerWarn').innerHTML = msgs.map((m) => `<p class="warn" style="margin-top:6px">${esc(m)}</p>`).join('');
+    const canQueue = p?.queue !== false;
+    radios.filter((r) => r.value !== 'upload').forEach((r) => { r.disabled = !canQueue; if (!canQueue && r.checked) radios[0].checked = true; });
+    const action = radios.find((r) => r.checked).value;
+    const st = (p?.state || '').toUpperCase();
+    const hint = {
+      upload: 'The file goes onto the printer. Start it on the printer or in Prusa Connect.',
+      queue: 'The file goes onto the printer and to the end of its queue in Prusa Connect.',
+      print: st === 'READY'
+        ? 'The printer is READY: it starts printing as soon as the file has arrived.'
+        : `The printer is ${st || 'not ready'}. It starts once someone presses "Set ready" on the printer or in Prusa Connect (that's the "bed is clear" check).`,
+    }[action];
+    document.getElementById('actionHint').textContent = canQueue ? hint : hint + ' (This printer has no queue in Prusa Connect.)';
+  };
+  sel.addEventListener('change', update);
+  radios.forEach((r) => r.addEventListener('change', update));
+  update();
+}
+
+async function doUpload() {
+  const bed = currentBed();
+  const uuid = document.getElementById('printerSel').value;
+  const filename = document.getElementById('fileName').value;
+  const action = document.querySelector('input[name=sendAction]:checked')?.value ?? 'upload';
+  const printer = (connectInfo.printers || []).find((p) => p.uuid === uuid);
+  dlgSet(`<p><span class="spinner"></span>Preparing binary G-code and uploading to ${esc(printer?.name ?? 'the printer')}…</p>`, '');
+  const r = await post('/api/send', { job: state.job.name, bed: bed.name, printer_uuid: uuid, filename, action });
+  if (r.ok) {
+    const mb = (r.size / 1e6).toFixed(2);
+    const link = `<a href="${esc(r.printer_page)}" target="_blank" rel="noopener">Prusa Connect</a>`;
+    let next;
+    if (r.queue_error) next = `<p class="warn">Uploaded, but adding it to the queue failed: ${esc(r.queue_error)}</p><p>Start it on the printer or in ${link}.</p>`;
+    else if (action === 'print') next = (r.printer_state || '').toUpperCase() === 'READY'
+      ? `<p>It's first in the queue and starts as soon as the file has reached the printer. Follow it in ${link}.</p>`
+      : `<p>It's first in the queue. The printer is ${esc(r.printer_state || 'not ready')}: press <b>Set ready</b> on the printer or in ${link} when the bed is clear, and it starts.</p>`;
+    else if (action === 'queue') next = `<p>Added to the queue (position ${(r.queue?.position ?? 0) + 1}). See it in ${link}.</p>`;
+    else next = `<p>Start it on the printer, or in ${link}.</p>`;
+    dlgSet(`<p class="ok">Uploaded to ${esc(printer?.name ?? 'the printer')}${r.path ? ` as <b>${esc(r.path)}</b>` : ''}.</p>
+      <p class="note">${r.format === 'binary' ? 'Binary G-code' : 'Text G-code'}, ${mb} MB, to Connect in ${r.seconds} s.
+        Connect now copies it to the printer over its own network link.${r.note ? ` (${esc(r.note)})` : ''}</p>
+      ${next}`,
+      '<button value="cancel" class="primary">Done</button>');
+  } else if (r.login_required) {
+    renderLogin(r.error);
+  } else {
+    dlgSet(`<p class="err">Upload failed.</p><p>${esc(r.error)}</p>`,
+      '<button value="cancel">Close</button><button type="button" class="primary" id="retryBtn">Try again</button>');
+  }
+}
+
+document.getElementById('send').addEventListener('click', openSend);
+dlg.addEventListener('click', async (ev) => {
+  const id = ev.target.id;
+  if (id === 'loginBtn') doLogin();
+  else if (id === 'uploadBtn') doUpload();
+  else if (id === 'retryBtn') openSend();
+  else if (id === 'logoutBtn') { await post('/api/connect/logout'); renderLogin(); }
+});
 
 // ---------- start ----------
 

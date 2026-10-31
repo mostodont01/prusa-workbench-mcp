@@ -12,7 +12,7 @@ SETTINGS_KEYS = [
     "fill_density", "fill_pattern", "support_material", "support_material_auto",
     "support_material_buildplate_only", "support_material_threshold", "brim_width", "skirts",
     "temperature", "first_layer_temperature", "bed_temperature", "filament_type", "nozzle_diameter",
-    "bed_shape", "max_print_height",
+    "bed_shape", "max_print_height", "printer_model",
 ]
 
 
@@ -93,3 +93,24 @@ def insert_thumbnails(path: Path, thumbs: list[tuple[int, int, str, bytes]]) -> 
         dst.write(b"\n; \n" + "".join(blocks).encode())
         shutil.copyfileobj(src, dst, 1 << 20)
     tmp.replace(path)
+
+
+def read_thumbnails(path: Path) -> list[tuple[int, int, str, bytes]]:
+    """Thumbnails stored in a text G-code header: [(w, h, 'PNG'|'QOI'|'JPG', image bytes)]."""
+    import base64
+    import re
+
+    out, cur, buf = [], None, []
+    with path.open(errors="replace") as f:
+        for n, line in enumerate(f):
+            m = re.match(r"^; thumbnail(?:_(\w+))? begin (\d+)x(\d+) \d+", line)
+            if m:
+                cur, buf = ((m.group(1) or "PNG").upper(), int(m.group(2)), int(m.group(3))), []
+            elif cur and re.match(r"^; thumbnail(?:_\w+)? end", line):
+                out.append((cur[1], cur[2], cur[0], base64.b64decode("".join(buf))))
+                cur = None
+            elif cur:
+                buf.append(line[1:].strip())
+            elif n > 2000 and not cur:     # thumbnails are at the top
+                break
+    return out

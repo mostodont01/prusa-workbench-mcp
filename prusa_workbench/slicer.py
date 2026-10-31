@@ -129,13 +129,15 @@ def check_settings(settings: dict) -> dict[str, str]:
 
 # ---------- slicing ----------
 
-def slice_3mf(model: Path, ini: Path, gcode: Path, printer: str, print_profile: str, filament: str) -> dict:
-    """Slice one bed. Returns {ok, seconds, exit_code, messages} (+ error)."""
+def slice_3mf(model: Path, ini: Path, gcode: Path, printer: str, print_profile: str, filament: str,
+              binary: bool = False) -> dict:
+    """Slice one bed. Returns {ok, seconds, exit_code, messages} (+ error).
+    Text G-code by default (the viewer reads it); binary=True for the smaller .bgcode that gets sent."""
     gcode.unlink(missing_ok=True)
     t0 = time.monotonic()
     proc = run(["--printer-profile", printer, "--print-profile", print_profile, "--material-profile", filament,
-                "--load", str(ini), "--no-binary-gcode", "--dont-arrange", "--export-gcode",
-                "-o", str(gcode), str(model)])
+                "--load", str(ini), "--binary-gcode" if binary else "--no-binary-gcode", "--dont-arrange",
+                "--export-gcode", "-o", str(gcode), str(model)])
     res = {"ok": gcode.exists(), "seconds": round(time.monotonic() - t0, 1), "exit_code": proc.returncode,
            "messages": messages(proc)}
     if not res["ok"]:

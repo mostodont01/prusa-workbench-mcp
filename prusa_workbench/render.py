@@ -24,7 +24,7 @@ def _view(kind: str):
 
 def render(meshes: list[tuple[str, trimesh.Trimesh, tuple]], size: tuple[int, int], view: str = "iso",
            bed: dict | None = None, labels: bool = False, background=(0, 0, 0, 0), ss: int = 3,
-           fit_bed: bool = True) -> Image.Image:
+           fit_bed: bool = True, margin: float | None = None) -> Image.Image:
     """meshes: (label, mesh in bed coordinates, rgb). Fits the objects (and the bed, if fit_bed) into the image."""
     W, H = size[0] * ss, size[1] * ss
     r, u, d = _view(view)
@@ -38,7 +38,8 @@ def render(meshes: list[tuple[str, trimesh.Trimesh, tuple]], size: tuple[int, in
         return Image.new("RGBA", size, background)
     allp = np.concatenate(pts) @ P
     lo, hi = allp[:, :2].min(axis=0), allp[:, :2].max(axis=0)
-    margin = 0.06 if bed else 0.04
+    if margin is None:
+        margin = 0.06 if bed else 0.04
     scale = min(W * (1 - 2 * margin) / max(hi[0] - lo[0], 1e-6), H * (1 - 2 * margin) / max(hi[1] - lo[1], 1e-6))
     cx, cy = (lo + hi) / 2
 
@@ -53,10 +54,13 @@ def render(meshes: list[tuple[str, trimesh.Trimesh, tuple]], size: tuple[int, in
         corners = [[bed["x0"], bed["y0"], 0], [bed["x1"], bed["y0"], 0], [bed["x1"], bed["y1"], 0], [bed["x0"], bed["y1"], 0]]
         c2, _ = proj(np.array(corners, dtype=float))
         dr.polygon([tuple(p) for p in c2], fill=(43, 46, 52, 255))
-        for i, x in enumerate(np.arange(np.ceil(bed["x0"] / 10) * 10, bed["x1"] + 1e-6, 10)):
+        if min(size) < 64:   # tiny thumbnails: plain plate, no grid
+            pass
+        else:
+          for x in np.arange(np.ceil(bed["x0"] / 10) * 10, bed["x1"] + 1e-6, 10):
             a, _ = proj(np.array([[x, bed["y0"], 0], [x, bed["y1"], 0]]))
             dr.line([tuple(a[0]), tuple(a[1])], fill=(69, 74, 83, 255) if x % 50 == 0 else (54, 58, 65, 255), width=ss)
-        for y in np.arange(np.ceil(bed["y0"] / 10) * 10, bed["y1"] + 1e-6, 10):
+          for y in np.arange(np.ceil(bed["y0"] / 10) * 10, bed["y1"] + 1e-6, 10):
             a, _ = proj(np.array([[bed["x0"], y, 0], [bed["x1"], y, 0]]))
             dr.line([tuple(a[0]), tuple(a[1])], fill=(69, 74, 83, 255) if y % 50 == 0 else (54, 58, 65, 255), width=ss)
         dr.line([tuple(p) for p in c2] + [tuple(c2[0])], fill=(107, 112, 122, 255), width=ss)
