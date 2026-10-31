@@ -72,11 +72,25 @@ into the folder by hand too.
 1. **Command-line test**: slice the fit test from robocars
    (`~/Programming/robots/robocars/modelling/fit_test/*.stl`) through Flatpak with my MINI profile,
    2 beds with different settings. Confirm the profiles load and the output is correct.
+   ✅ Done 2026-10-31, CLI only (no window): `scripts/cli_test.py`. See "CLI findings" below.
 2. **Viewer v1**: load a job folder, 3D view, bed tabs, layer slider, info panel.
 3. **MCP server**: models, transforms, arrange, beds, supports, settings, slicing → job folder.
 4. **Sending**: PrusaLink first, then Prusa Connect.
 
 ## Open questions
 - ~~Project and app name.~~ → **prusa-workbench-mcp** (decided 2026-10-31).
-- Language: Python for the server and the viewer backend (assumed).
-- Where job folders live (`~/print-jobs`?).
+- ~~Language~~ → Python for the server and the viewer backend (decided 2026-10-31).
+- Where job folders live: `~/print-jobs` for now (it must be under `$HOME`, see below).
+
+## CLI findings (step 1, PrusaSlicer 2.9.6 Flatpak)
+- Command: `flatpak run --command=prusa-slicer com.prusa3d.PrusaSlicer --printer-profile "Original Prusa MINI & MINI+ Input Shaper"
+  --material-profile "Alzament Basic PLA" --print-profile "0.20mm SPEED @MINIIS 0.4" --no-binary-gcode --dont-arrange --export-gcode -o bed-1.gcode bed-1.3mf`.
+  System presets load by name from the normal config folder; no `--datadir` needed. Any setting can be overridden: `--perimeters 4 --fill-density 40%`.
+- `--query-print-filament-profiles --printer-profile …` lists the print profiles and their compatible filaments as JSON (good for the MCP server).
+- **The Flatpak sandbox sees `$HOME` but not `/tmp`**: inputs and outputs must be under home.
+- Binary G-code is turned off with `--no-binary-gcode` (on/off switch, `--binary-gcode 0` is wrong).
+- **`--merge` (CLI auto-arrange) segfaults** (exit 139) with 2+ objects. So we arrange in Python and write a 3MF with
+  the placements, sliced with `--dont-arrange`. Add `Metadata/Slic3r_PE_model.config` or a single object is named after the file.
+- **Objects off the bed → no G-code but exit code 0** ("All objects are outside of the print volume"). Success = the output file exists.
+- Two beds in parallel: ~8 s total. The G-code has `;TYPE:` / `;LAYER_CHANGE`, and the footer has time, filament, `objects_info`
+  (names + outlines) and the full settings dump, which is everything the job's `bed-N.json` and the viewer need.
