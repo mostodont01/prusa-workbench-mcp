@@ -48,6 +48,8 @@ class Obj:
     linear: list[list[float]] = field(default_factory=lambda: np.eye(3).tolist())  # rotation/scale
     position: list[float] = field(default_factory=lambda: [90.0, 90.0])           # footprint center, mm
     settings: dict[str, str] = field(default_factory=dict)   # per-object overrides (e.g. supports)
+    paint: dict[str, list[int]] = field(default_factory=dict)  # painted supports: "block"/"enforce" -> triangle ids
+    paint_faces: int = 0                  # triangle count the paint was made for (detects a changed mesh)
 
 
 def supports_settings(mode: str | None, angle: float | None = None) -> dict[str, str]:
@@ -218,7 +220,8 @@ class Job:
         out = []
         for _ in range(count):
             c = Obj(f"o{self.next_id}", o.name, o.source, o.mesh_file, o.bed,
-                    [row[:] for row in o.linear], list(o.position), dict(o.settings))
+                    [row[:] for row in o.linear], list(o.position), dict(o.settings),
+                    {k: list(v) for k, v in o.paint.items()}, o.paint_faces)
             self.next_id += 1
             self.objects.append(c)
             out.append(c)
@@ -245,6 +248,54 @@ class Job:
             o.position = [float(move_to[0]), float(move_to[1])]
         if move_by is not None:
             o.position = [o.position[0] + float(move_by[0]), o.position[1] + float(move_by[1])]
+
+    def paint_supports(self, o: Obj, mode: str, box: list[float] | None = None,
+                       small_gaps_mm: float | None = None) -> dict:
+        """Paint supports on triangles of an object (stored by triangle index, so it survives moving/rotating).
+        mode: block | enforce | clear. Selection: triangles whose center is inside `box` (bed coordinates,
+        [x0, y0, z0, x1, y1, z1]) and/or, with small_gaps_mm, overhangs whose support would stand on the object
+        itself at most that far below (screw holes, nut traps, slots). clear without a selection clears all."""
+        if mode not in ("block", "enforce", "clear"):
+            raise ValueError("mode must be block, enforce or clear")
+        m = self.placed(o)
+        n = len(m.faces)
+        sel = np.zeros(n, dtype=bool)
+        chosen = False
+        if box is not None:
+            if len(box) != 6:
+                raise ValueError("box is [x0, y0, z0, x1, y1, z1] in bed coordinates (mm)")
+            lo, hi = np.minimum(box[:3], box[3:]), np.maximum(box[:3], box[3:])
+            c = m.triangles_center
+            sel |= ((c >= lo) & (c <= hi)).all(axis=1)
+            chosen = True
+        if small_gaps_mm is not None:
+            c, nz = m.triangles_center, m.face_normals[:, 2]
+            cand = np.where((nz < -0.5) & (c[:, 2] > 0.05))[0]      # facing down, not on the bed
+            if len(cand):
+                origins = c[cand] - np.array([0, 0, 1e-3])
+                dirs = np.tile([0.0, 0.0, -1.0], (len(cand), 1))
+                locs, ray_idx, _ = m.ray.intersects_location(origins, dirs, multiple_hits=False)
+                gap = np.full(len(cand), np.inf)
+                gap[ray_idx] = origins[ray_idx, 2] - locs[:, 2]
+                sel[cand[gap <= small_gaps_mm]] = True
+            chosen = True
+        idx = set(np.where(sel)[0].tolist())
+        paint = {k: set(v) for k, v in o.paint.items()}
+        if mode == "clear":
+            for k in paint:
+                paint[k] = paint[k] - idx if chosen else set()
+        else:
+            other = "enforce" if mode == "block" else "block"
+            paint.setdefault(mode, set()).update(idx)
+            paint[other] = paint.get(other, set()) - idx
+        o.paint = {k: sorted(v) for k, v in paint.items() if v}
+        o.paint_faces = n
+        return {"selected": len(idx), "painted": {k: len(v) for k, v in o.paint.items()}}
+
+    def paint_for(self, o: Obj) -> dict:
+        if o.paint and o.paint_faces != len(self.mesh(o).faces):
+            return {}   # mesh changed: paint no longer matches its triangles
+        return o.paint
 
     def arrange(self, bed_name: str, gap: float = SPACING, allow_rotate: bool = True, spread: bool = True) -> dict:
         """Arrange one bed. Objects that don't fit go to new beds (spread) or are reported."""
@@ -298,7 +349,8 @@ class Job:
         return out
 
     def input_hash(self, bed: Bed) -> str:
-        objs = [(o.id, o.name, o.mesh_file, o.linear, o.position, sorted(o.settings.items())) for o in self.on_bed(bed.name)]
+        objs = [(o.id, o.name, o.mesh_file, o.linear, o.position, sorted(o.settings.items()),
+                 sorted((k, len(v), sum(v)) for k, v in o.paint.items())) for o in self.on_bed(bed.name)]
         blob = json.dumps([self.printer, asdict(bed), objs], sort_keys=True, default=str)
         return hashlib.sha1(blob.encode()).hexdigest()[:16]
 
@@ -334,7 +386,8 @@ class Job:
                          "size_mm": [round(float(v), 2) for v in hi - lo],
                          "position": [round(v, 2) for v in o.position],
                          "transformed": not np.allclose(lin, np.eye(3)),
-                         "settings": o.settings, "source": o.source})
+                         "settings": o.settings, "source": o.source,
+                         **({"painted_supports": {k: len(v) for k, v in o.paint.items()}} if o.paint else {})})
         return {"job": self.name, "folder": str(self.dir), "printer": self.printer,
                 "bed_size_mm": [g["x1"] - g["x0"], g["y1"] - g["y0"], g["height"]], "beds": beds, "objects": objs}
 
@@ -364,7 +417,7 @@ class Job:
         objs = self.on_bed(bed.name)
         names = self._object_names(objs)
         with self._lock:
-            placed = [(names[o.id], self.placed(o), o.settings) for o in objs]
+            placed = [(names[o.id], self.placed(o), o.settings, self.paint_for(o)) for o in objs]
         model, ini, out = (self.dir / f"{bed.name}{s}" for s in (".3mf", ".ini", ".gcode"))
         threemf.write(model, placed)
         ini.write_text("".join(f"{k} = {v}\n" for k, v in bed.settings.items()) or "# no overrides\n")
@@ -374,7 +427,9 @@ class Job:
         res = slicer.slice_3mf(model, ini, out, self.printer, bed.print_profile, bed.filament)
         info = {"bed": bed.name, "printer": self.printer, "print_profile": bed.print_profile,
                 "filament": bed.filament, "overrides": bed.settings,
-                "object_settings": {names[o.id]: o.settings for o in objs if o.settings},
+                "object_settings": {names[o.id]: {**o.settings,
+                                                  **({"painted_supports": {k: len(v) for k, v in o.paint.items()}} if o.paint else {})}
+                                    for o in objs if o.settings or o.paint},
                 "input_hash": self.input_hash(bed), "slice_seconds": res["seconds"], "exit_code": res["exit_code"]}
         issues = self.issues(bed.name)
         if not res["ok"]:
@@ -412,5 +467,5 @@ class Job:
 
     def preview(self, bed_name: str) -> bytes:
         objs = self.on_bed(bed_name)
-        return render.bed_preview([(f"{o.id} {o.name}", self.placed(o)) for o in objs], self.geometry(),
-                                  title=f"{self.name} / {bed_name}")
+        return render.bed_preview([(f"{o.id} {o.name}", self.placed(o), self.paint_for(o)) for o in objs],
+                                  self.geometry(), title=f"{self.name} / {bed_name}")

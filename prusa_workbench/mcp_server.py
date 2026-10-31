@@ -442,6 +442,46 @@ def set_object_settings(objects: list[str], supports: str | None = None, support
     return _out([{"id": oid, "name": j.obj(oid).name, "settings": j.obj(oid).settings} for oid in ids])
 
 
+@tool()
+def paint_supports(objects: list[str], mode: str = "block", box: list[float] | None = None,
+                   small_gaps_mm: float | None = None) -> str:
+    """Paint supports on parts of objects, like the support painting in PrusaSlicer's window.
+    E.g. keep supports out of screw holes and nut traps, or force them under one feature.
+    The paint is stored per triangle, so it stays when objects are moved, rotated or copied. Check with preview
+    (blocked = red, enforced = blue).
+
+    Painting only changes where supports go: blocking needs supports on (auto or build_plate_only) for the
+    object/bed; enforcing needs supports on in any mode (also "painted").
+
+    Args:
+        objects: object ids or names.
+        mode: block | enforce | clear.
+        box: [x0, y0, z0, x1, y1, z1] in bed coordinates (mm): triangles whose center is inside.
+        small_gaps_mm: overhangs whose support would stand on the object itself at most this far below
+                       (horizontal holes, nut traps, slots). E.g. 8 blocks supports in holes up to ~8 mm.
+                       With box too, both selections are used.
+        clear without box/small_gaps_mm removes all paint from the objects.
+    """
+    j = job()
+    if mode != "clear" and box is None and small_gaps_mm is None:
+        raise ValueError("give box and/or small_gaps_mm to say where to paint")
+    out = []
+    for oid in _ids(objects):
+        o = j.obj(oid)
+        r = j.paint_supports(o, mode, box=box, small_gaps_mm=small_gaps_mm)
+        b = j.bed(o.bed)
+        eff = {**slicer.resolved_config(j.printer, b.print_profile, b.filament), **b.settings, **o.settings}
+        on, auto = eff.get("support_material") == "1", eff.get("support_material_auto") == "1"
+        note = None
+        if mode == "block" and not (on and auto):
+            note = "supports are not on in auto mode for this object, so there is nothing to block yet (supports=auto)"
+        elif mode == "enforce" and not on:
+            note = "supports are off for this object: enforcing needs supports on (e.g. supports=painted)"
+        out.append({"id": oid, "name": o.name, **r, **({"note": note} if note else {})})
+    j.save()
+    return _out(out)
+
+
 # ---------------------------------------------------------------- look / slice
 
 @tool()

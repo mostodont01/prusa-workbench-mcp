@@ -17,7 +17,14 @@ dependencies = [
     "lxml",           # 3MF loading in trimesh
     "networkx",       # 3MF loading in trimesh
     "pillow>=11.3",   # thumbnails + previews (QOI)
+    "rtree",          # ray casting (paint_supports small_gaps_mm)
 ]
+
+[project.optional-dependencies]
+dev = ["pytest", "manifold3d"]   # manifold3d: boolean ops for test parts
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [project.scripts]
 prusa-workbench-viewer = "prusa_workbench.viewer.__main__:main"

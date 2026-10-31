@@ -72,15 +72,17 @@ function buildBed(shapeStr, maxH) {
   plate.position.z = -0.02;
   bedGroup.add(plate);
 
-  const minor = [], major = [];
-  for (let x = Math.ceil(x0 / 10) * 10; x <= x1; x += 10) (x % 50 === 0 ? major : minor).push(x, y0, 0, x, y1, 0);
-  for (let y = Math.ceil(y0 / 10) * 10; y <= y1; y += 10) (y % 50 === 0 ? major : minor).push(x0, y, 0, x1, y, 0);
+  // Faint 1 cm grid, plus bold center lines that split the bed into 2 x 2 quarters.
+  const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  const minor = [], major = [x0, my, 0.005, x1, my, 0.005, mx, y0, 0.005, mx, y1, 0.005];
+  for (let x = Math.ceil(x0 / 10) * 10; x <= x1; x += 10) if (Math.abs(x - mx) > 0.01) minor.push(x, y0, 0, x, y1, 0);
+  for (let y = Math.ceil(y0 / 10) * 10; y <= y1; y += 10) if (Math.abs(y - my) > 0.01) minor.push(x0, y, 0, x1, y, 0);
   const lines = (arr, color) => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3));
     return new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color }));
   };
-  bedGroup.add(lines(minor, 0x363a41), lines(major, 0x454a53));
+  bedGroup.add(lines(minor, 0x33363d), lines(major, 0x6b717c));
   const outline = [];
   pts.forEach((p, i) => { const q = pts[(i + 1) % pts.length]; outline.push(p[0], p[1], 0, q[0], q[1], 0); });
   bedGroup.add(lines(outline, 0x6b707a));

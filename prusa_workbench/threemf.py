@@ -20,17 +20,32 @@ RELS = ('<?xml version="1.0" encoding="UTF-8"?>'
         'Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>')
 
 
-def write(path: Path, objects: list[tuple[str, trimesh.Trimesh, dict[str, str]]]) -> None:
-    """objects: (name, mesh in bed coordinates, PrusaSlicer per-object settings)."""
+# Painted supports, the way PrusaSlicer stores them: a per-triangle attribute holding its TriangleSelector state.
+# A whole (unsplit) triangle is one hex digit: enforcer "4", blocker "8".
+PAINT_CODES = {"enforce": "4", "block": "8"}
+
+
+def write(path: Path, objects: list[tuple]) -> None:
+    """objects: (name, mesh in bed coordinates, PrusaSlicer per-object settings[, paint]) where paint maps
+    "block"/"enforce" to triangle indices (painted supports)."""
     model = io.StringIO()
     model.write('<?xml version="1.0" encoding="UTF-8"?><model unit="millimeter" xml:lang="en-US" '
-                'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02"><resources>')
-    for oid, (name, mesh, _) in enumerate(objects, start=1):
+                'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02" '
+                'xmlns:slic3rpe="http://schemas.slic3r.org/3mf/2017/06"><resources>')
+    for oid, obj in enumerate(objects, start=1):
+        name, mesh = obj[0], obj[1]
+        paint = obj[3] if len(obj) > 3 and obj[3] else {}
+        codes: dict[int, str] = {}
+        for kind, idx in paint.items():
+            for i in idx:
+                codes[int(i)] = PAINT_CODES[kind]
         model.write(f'<object id="{oid}" name={quoteattr(name)} type="model"><mesh><vertices>')
         v = np.asarray(mesh.vertices, dtype=float)
         model.write("".join(f'<vertex x="{x:.5f}" y="{y:.5f}" z="{z:.5f}"/>' for x, y, z in v))
         model.write("</vertices><triangles>")
-        model.write("".join(f'<triangle v1="{a}" v2="{b}" v3="{c}"/>' for a, b, c in np.asarray(mesh.faces)))
+        model.write("".join(
+            f'<triangle v1="{a}" v2="{b}" v3="{c}"' + (f' slic3rpe:custom_supports="{codes[i]}"/>' if i in codes else "/>")
+            for i, (a, b, c) in enumerate(np.asarray(mesh.faces))))
         model.write("</triangles></mesh></object>")
     model.write("</resources><build>")
     for oid in range(1, len(objects) + 1):
@@ -41,7 +56,7 @@ def write(path: Path, objects: list[tuple[str, trimesh.Trimesh, dict[str, str]]]
     # and per-object setting overrides.
     cfg = io.StringIO()
     cfg.write('<?xml version="1.0" encoding="UTF-8"?><config>')
-    for oid, (name, mesh, settings) in enumerate(objects, start=1):
+    for oid, (name, mesh, settings, *_) in enumerate(objects, start=1):
         cfg.write(f'<object id="{oid}" instances_count="1">'
                   f'<metadata type="object" key="name" value={quoteattr(name)}/>')
         for k, val in settings.items():

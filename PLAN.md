@@ -58,7 +58,8 @@ into the folder by hand too.
 - Plan: support both.
 
 ## Limits
-- Hand-painted supports, seams and modifier regions are hard to do from the command line → use the PrusaSlicer window for those rare cases.
+- ~~Hand-painted supports~~ → done: `paint_supports` (see notes). Painted seams and modifier regions still need the
+  PrusaSlicer window (seams could be painted the same way: `slic3rpe:custom_seam`, not needed so far).
 
 ## Prior art (reviewed 2026-10-31; ideas only)
 - [JorgeAlbareda/PrusaSlicer-MCP](https://github.com/JorgeAlbareda/PrusaSlicer-MCP): Python, **AGPL**, closest in spirit. Session of models on the bed, arrange,
@@ -153,4 +154,22 @@ into the folder by hand too.
 - Python's default User-Agent got a 403 from account.prusa3d.com; requests send an honest
   `prusa-workbench/0.1 (+repo URL)`. Whether that is accepted: see the first real login.
 - The viewer's POST endpoints need `X-Workbench: 1` and a local Host header (CSRF / DNS rebinding).
+
+## Support painting notes (2026-11-01)
+- PrusaSlicer stores painted supports in the 3MF as a per-triangle attribute `slic3rpe:custom_supports` (namespace
+  `http://schemas.slic3r.org/3mf/2017/06`) holding the TriangleSelector state; a whole triangle is one hex digit:
+  `4` = enforcer, `8` = blocker. Verified: blocking one arm of a T leaves supports only under the other arm.
+- Stored per object as triangle indices (`paint` + `paint_faces` in job.json), so paint survives move/rotate/copy;
+  if the mesh changes, the paint is dropped instead of landing on the wrong triangles.
+- `small_gaps_mm`: downward faces (normal z < -0.5, not on the bed) whose downward ray hits the same object within
+  that distance, i.e. supports that would stand on the part itself. Test bracket: hole supports 525 → 4 moves,
+  arm over the bed untouched.
+- Preview draws painted triangles see-through on top (they're usually inside holes, facing down).
+
+## Tests
+- `pytest`: 29 tests, ~20 s. `-m slicer` = real PrusaSlicer runs that pin down the CLI behavior we depend on.
+- Other: arrange (inside bed, gaps, rotation, leftovers), lay flat, watertight reload (the triangle-soup bug),
+  paint following the object, 3MF contents, text + binary thumbnails (CRC, block order), G-code summary, viewer
+  request rules, and the browser G-code parser incl. G2/G3 arcs (run in Node).
+- Not covered: the Prusa Connect API itself (reverse-engineered; can only be tested with a real account).
 

@@ -33,6 +33,7 @@ It never starts a print: the result opens in the viewer and you send it from the
 | `arrange` / `move_to_bed` / `copy_objects` / `remove_objects` | packing per bed; what doesn't fit goes to a new bed |
 | `set_bed` / `remove_bed` | per bed: print profile, filament, any PrusaSlicer setting, supports |
 | `set_object_settings` | per object: supports (off / auto / build plate only), angle, infill, perimeters, brim… |
+| `paint_supports` | paint support blockers/enforcers like PrusaSlicer's brush: inside a box, or automatically in small gaps (screw holes, nut traps) |
 | `preview` | picture of a bed (top + iso, labeled) so Claude can check the layout before slicing |
 | `slice` | all beds in parallel, each with its own settings → G-code with thumbnails → viewer |
 | `open_viewer` | start / open the viewer |
@@ -72,6 +73,17 @@ PrusaSlicer's public OAuth client, then register the upload and PUT the file. It
   it from the bed's saved inputs at send time, with our thumbnails added. The MINI's Wi-Fi is the slow part.
 - Tokens are kept in `~/.config/prusa-workbench/connect-tokens.json` (mode 600). **Log out** in the dialog deletes them.
 - The viewer only accepts these requests from `localhost` pages (custom header + Host check).
+
+## Tests
+
+```sh
+.venv/bin/pip install -e '.[dev]'
+.venv/bin/pytest                    # ~20 s; includes real PrusaSlicer runs
+.venv/bin/pytest -m "not slicer"    # ~2 s, no PrusaSlicer
+```
+
+The `slicer` tests check the PrusaSlicer behavior everything relies on (bed `.ini` overrides, per-object settings,
+painted supports, "no G-code but exit 0", the `.bgcode` layout), so run them after a PrusaSlicer update.
 
 ## Smoke test without Claude
 
