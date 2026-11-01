@@ -186,5 +186,10 @@ into the folder by hand too.
 - WebKitGTK 2.52: WebGL2 works. Forcing `HardwareAccelerationPolicy.ALWAYS` aborted without a GL context, so the
   default policy is used. It always needs OpenGL, so it can't be tested offscreen; `--snapshot` opens a window
   briefly and saves the 3D view via `window.__viewerSnapshot()` (WebKit's own snapshot needs python3-gi-cairo).
-- The MCP server's `slice` / `open_viewer` open the app window when it's installed (else the browser).
+- Every `slice` opens the app window, or brings it to the front, and switches it to the sliced job (`POST /api/show`,
+  polled by the page). A browser tab (no app installed) is still opened only once per session.
+- Bringing it to the front: on native Wayland, GNOME refuses `present()` from a background process (no activation
+  token): tested, the window stayed behind. So the window runs on XWayland (`GDK_BACKEND=x11`) and raises itself
+  with the X server's current time + a short keep-above: tested, it comes to the front and gets focus. Scale is 1
+  here, so no XWayland blur; WebGL works the same.
 

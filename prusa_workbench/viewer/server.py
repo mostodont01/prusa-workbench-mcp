@@ -15,6 +15,8 @@ the summary, overrides and warnings; for G-code dropped in by hand the summary i
     GET  /api/connect/login       is the login window still open, last result
     POST /api/connect/logout
     POST /api/jobs/delete         {names: [...]} -> job folders go to the desktop trash
+    POST /api/show                {job} -> open pages switch to this job (Claude just sliced it)
+    GET  /api/show                {seq, job} (polled by the page)
     POST /api/send                {job, bed, printer_uuid, filename, action: upload|queue|print}
                                   upload (binary G-code when possible), then optionally queue it (print = first
                                   in the queue: starts once the file is on a printer a person has set READY)
@@ -166,6 +168,9 @@ class Jobs:
 
 
 def make_handler(jobs: Jobs, login: Login):
+    show = {"seq": 0, "job": None}
+    show_lock = threading.Lock()
+
     class Handler(BaseHTTPRequestHandler):
         server_version = APP
 
@@ -187,6 +192,13 @@ def make_handler(jobs: Jobs, login: Login):
                     return self._json({"logged_in": False})
                 if path == "/api/send":
                     return self._send(body)
+                if path == "/api/show":
+                    if not jobs.job_dir(str(body.get("job", ""))):
+                        return self._json({"ok": False, "error": "no such job"}, HTTPStatus.NOT_FOUND)
+                    with show_lock:
+                        show["seq"] += 1
+                        show["job"] = str(body["job"])
+                        return self._json({"ok": True, **show})
                 if path == "/api/jobs/delete":
                     names = body.get("names")
                     if not isinstance(names, list) or not names:
@@ -245,6 +257,9 @@ def make_handler(jobs: Jobs, login: Login):
                     return self._json({"app": APP, "jobs_dir": str(jobs.root)})
                 if path.startswith("/api/") and not self._local():
                     return self._error(HTTPStatus.FORBIDDEN)
+                if path == "/api/show":
+                    with show_lock:
+                        return self._json(dict(show))
                 if path == "/api/connect":
                     return self._json(connect.status())
                 if path == "/api/connect/login":

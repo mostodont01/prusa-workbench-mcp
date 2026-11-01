@@ -55,8 +55,8 @@ PYTHONPATH=$PWD /usr/bin/python3 -m prusa_workbench.app_window --install     # o
 ```
 
 Then start **Prusa Workbench** from the app menu. It starts the viewer server if needed, and links to other sites
-(Prusa Connect) open in the browser. When Claude slices, it opens this window (or brings it to the front)
-instead of a browser tab; `PRUSA_WORKBENCH_OPEN=browser` switches back. Needs the system `python3` with
+(Prusa Connect) open in the browser. Every time Claude slices, this window opens (or comes to the front) and
+shows the sliced job; `PRUSA_WORKBENCH_OPEN=browser` uses the browser instead. Needs the system `python3` with
 `gir1.2-webkit2-4.1` (same as the Prusa login window).
 
 Stdlib only (three.js loads from a CDN, so the browser needs internet). The MCP server starts it by itself.

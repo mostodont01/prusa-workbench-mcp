@@ -43,16 +43,32 @@ def ensure_running() -> bool:
     raise RuntimeError(f"viewer did not start, see {CACHE_DIR / 'viewer.log'}")
 
 
+def show_job(job: str) -> None:
+    """Tell open viewer pages to switch to this job (e.g. the one Claude just sliced)."""
+    req = urllib.request.Request(URL + "api/show", data=json.dumps({"job": job}).encode(), method="POST",
+                                 headers={"Content-Type": "application/json", "X-Workbench": "1"})
+    try:
+        urllib.request.urlopen(req, timeout=3).read()
+    except OSError:
+        pass
+
+
 APP_ID = "io.github.mostodont01.PrusaWorkbench"
 GTK_PYTHON = os.environ.get("PRUSA_WORKBENCH_GTK_PYTHON", "/usr/bin/python3")
 
 
+def app_installed() -> bool:
+    if os.environ.get("PRUSA_WORKBENCH_OPEN") == "browser":
+        return False
+    data = Path(os.environ.get("XDG_DATA_HOME", "~/.local/share")).expanduser()
+    return (data / "applications" / f"{APP_ID}.desktop").exists()
+
+
 def open_ui() -> None:
     """Open the viewer: the app window if it's installed (app_window --install), else the browser.
-    The app window is single-instance, so this just raises it when it's already open.
+    The app window is single-instance, so this just brings it to the front when it's already open.
     PRUSA_WORKBENCH_OPEN=browser forces the browser."""
-    data = Path(os.environ.get("XDG_DATA_HOME", "~/.local/share")).expanduser()
-    if os.environ.get("PRUSA_WORKBENCH_OPEN") != "browser" and (data / "applications" / f"{APP_ID}.desktop").exists():
+    if app_installed():
         try:
             subprocess.Popen([GTK_PYTHON, "-m", "prusa_workbench.app_window"], cwd=REPO,
                              env=dict(os.environ, PYTHONPATH=str(REPO)), stdin=subprocess.DEVNULL,

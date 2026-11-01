@@ -121,3 +121,13 @@ def test_delete_only_plain_job_folders(tmp_path):
 def test_delete_needs_header(viewer):
     body = json.dumps({"names": ["2026-01-01-job"]}).encode()
     assert _req(viewer + "/api/jobs/delete", "POST", {}, body)[0] == 403
+
+
+def test_show_job_request(viewer):
+    assert json.loads(_req(viewer + "/api/show")[1]) == {"seq": 0, "job": None}
+    body = json.dumps({"job": "2026-01-01-job"}).encode()
+    assert _req(viewer + "/api/show", "POST", {}, body)[0] == 403                     # needs the header
+    st, res = _req(viewer + "/api/show", "POST", {"X-Workbench": "1"}, body)
+    assert st == 200 and json.loads(res)["seq"] == 1
+    assert _req(viewer + "/api/show", "POST", {"X-Workbench": "1"}, json.dumps({"job": "nope"}).encode())[0] == 404
+    assert json.loads(_req(viewer + "/api/show")[1]) == {"seq": 1, "job": "2026-01-01-job"}

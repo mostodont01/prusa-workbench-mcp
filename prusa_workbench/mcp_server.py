@@ -523,7 +523,8 @@ def slice_beds(beds: list[str] | None = None, open_viewer: bool = True) -> str:
 
     Args:
         beds: bed names (default: all beds).
-        open_viewer: start the viewer and open it (the app window if installed, else the browser; once per session).
+        open_viewer: show the result: the app window opens or comes to the front (a browser tab opens only once
+                     per session when the app isn't installed).
     """
     global _viewer_opened
     j = job()
@@ -549,7 +550,10 @@ def slice_beds(beds: list[str] | None = None, open_viewer: bool = True) -> str:
     if open_viewer:
         try:
             started = launch.ensure_running()
-            if started or not _viewer_opened:
+            launch.show_job(j.name)
+            # The app window opens or comes to the front on every slice; a browser tab only once per session
+            # (otherwise every slice would add a tab).
+            if launch.app_installed() or started or not _viewer_opened:
                 launch.open_ui()
                 _viewer_opened = True
             viewer = launch.URL
@@ -565,6 +569,8 @@ def open_viewer() -> str:
     It shows the newest job and follows new slices."""
     global _viewer_opened
     launch.ensure_running()
+    if _job:
+        launch.show_job(_job.name)
     launch.open_ui()
     _viewer_opened = True
     return _out({"viewer": launch.URL})

@@ -70,9 +70,14 @@ def main() -> int:
         uninstall()
         return 0
 
+    os.environ.setdefault("GDK_BACKEND", "x11")   # XWayland: lets a background "show the window" bring it forward
     import gi
     gi.require_version("Gtk", "3.0")
     gi.require_version("WebKit2", "4.1")
+    try:
+        gi.require_version("GdkX11", "3.0")
+    except ValueError:
+        pass
     from gi.repository import Gio, GLib, Gtk, WebKit2
 
     from .viewer import launch
@@ -112,10 +117,19 @@ def main() -> int:
         return _snapshot(make_view(), args.snapshot, Gtk, GLib, WebKit2)
 
     app = Gtk.Application(application_id=APP_ID)
+    logf = os.environ.get("PRUSA_WORKBENCH_APP_LOG")
+
+    def log(msg):
+        if logf:
+            with open(logf, "a") as f:
+                f.write(msg + "\n")
 
     def on_activate(a):
         if a.get_windows():
-            a.get_windows()[0].present()
+            win = a.get_windows()[0]
+            log(f"activate again: active before = {win.is_active()}")
+            _bring_to_front(win, Gtk, GLib)
+            GLib.timeout_add(1500, lambda: log(f"after present: active = {win.is_active()}") or False)
             return
         win = Gtk.ApplicationWindow(application=a, title=NAME)
         win.set_default_size(1440, 900)
@@ -126,6 +140,25 @@ def main() -> int:
 
     app.connect("activate", on_activate)
     return app.run([sys.argv[0]])
+
+
+def _bring_to_front(win, Gtk, GLib) -> None:
+    """Raise and focus the window when asked from outside (Claude sliced something).
+    On X11/XWayland a request with the X server's current time counts as fresh, so GNOME lets it through.
+    (On native Wayland a program can't take focus without an activation token, which a background
+    process doesn't have.)"""
+    win.deiconify()
+    gdk_win = win.get_window()
+    ts = 0
+    try:
+        gi_x11 = __import__("gi.repository.GdkX11", fromlist=["GdkX11"])
+        if isinstance(gdk_win, gi_x11.X11Window):
+            ts = gi_x11.x11_get_server_time(gdk_win)
+    except (ImportError, ValueError, AttributeError):
+        pass
+    win.set_keep_above(True)
+    win.present_with_time(ts) if ts else win.present()
+    GLib.timeout_add(300, lambda: win.set_keep_above(False) or False)
 
 
 def _snapshot(view, path, Gtk, GLib, WebKit2) -> int:

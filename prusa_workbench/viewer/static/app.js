@@ -644,8 +644,18 @@ el.job.addEventListener('change', () => {
 });
 
 // Poll the jobs folder: new jobs (when following), re-sliced beds, added/removed beds.
+let showSeq = null;   // last "show this job" request seen (Claude just sliced it)
 async function poll() {
   try {
+    const sh = await getJSON('/api/show');
+    if (showSeq === null) showSeq = sh.seq;            // don't jump to an old request on page load
+    else if (sh.seq !== showSeq) {
+      showSeq = sh.seq;
+      state.follow = true;                              // back to "newest", which is what was just sliced
+      state.jobs = await getJSON('/api/jobs');
+      if (sh.job && sh.job !== state.job?.name) await selectJob(sh.job);
+      else renderJobSelect();
+    }
     const jobs = await getJSON('/api/jobs');
     const listChanged = JSON.stringify(jobs.map((j) => [j.name, j.beds])) !== JSON.stringify(state.jobs.map((j) => [j.name, j.beds]));
     state.jobs = jobs;
