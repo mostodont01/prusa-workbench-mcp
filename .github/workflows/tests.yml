@@ -63,7 +63,6 @@ jobs:
         run: python -m pytest -v -rs
 
       - name: Login window catches the prusaslicer:// redirect (WebView2)
-        continue-on-error: true
         env:
           PRUSA_WORKBENCH_GUI_TESTS: "1"
         run: python -m pytest -v tests/test_login_window.py

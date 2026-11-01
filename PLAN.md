@@ -208,3 +208,18 @@ into the folder by hand too.
 - `PRUSA_WORKBENCH_APP_SELFTEST=1` + `PRUSA_WORKBENCH_APP_LOG=file`: clicks the Connect tab, sends both messages,
   logs the tab state, quits (needs a real window).
 
+## Windows (2026-11-01)
+- `config.py` finds PrusaSlicer per platform (Flatpak / `prusa-slicer` / `prusa-slicer-console.exe` / PrusaSlicer.app)
+  and its config folder; all text I/O is explicit UTF-8; `osutil.py` has the per-OS bits (no console windows,
+  `os.startfile`, recycle bin via send2trash).
+- Login window on Windows: pywebview (Edge WebView2). The control is `window.native.browser.webview`; its
+  `NavigationStarting` (hooked in `before_show`, UI thread) sees the `prusaslicer://` redirect and cancels it.
+  pywebview's current URL only updates after a navigation completes, so polling does not work there.
+- Viewer is a PWA (Edge/Chrome "Install app"); the GTK app window and Connect tab stay Linux-only.
+- CI (GitHub Actions): Windows with real PrusaSlicer 2.9.6 from the portable zip. A fresh install has no profiles
+  "installed", so the workflow copies `resources/profiles/PrusaResearch*` to `%APPDATA%/PrusaSlicer/vendor` and writes
+  `PrusaSlicer.ini` with `[vendor:PrusaResearch] model:MINIIS = 0.4` and `[filaments] Prusament PLA @MINIIS = 1`
+  (plain "Prusament PLA" is not compatible with the MINI). Result: all 32 tests pass on Windows, plus the login
+  window test (local server redirecting to prusaslicer://). Linux job: fast tests on Python 3.11.
+- macOS: paths are in place, untested.
+
