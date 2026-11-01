@@ -48,6 +48,17 @@ of the profiles); both stay in the job folder next to `bed-N.gcode` and `bed-N.j
 python3 -m prusa_workbench.viewer --open        # http://127.0.0.1:8765, reads ~/print-jobs
 ```
 
+**As an app** (its own window and app-menu entry; Firefox on Linux can't install PWAs, so this uses GTK + WebKit):
+
+```sh
+PYTHONPATH=$PWD /usr/bin/python3 -m prusa_workbench.app_window --install     # once; --uninstall removes it
+```
+
+Then start **Prusa Workbench** from the app menu. It starts the viewer server if needed, and links to other sites
+(Prusa Connect) open in the browser. When Claude slices, it opens this window (or brings it to the front)
+instead of a browser tab; `PRUSA_WORKBENCH_OPEN=browser` switches back. Needs the system `python3` with
+`gir1.2-webkit2-4.1` (same as the Prusa login window).
+
 Stdlib only (three.js loads from a CDN, so the browser needs internet). The MCP server starts it by itself.
 Options: `--jobs DIR`, `--port N`, `--job NAME`.
 

@@ -523,7 +523,7 @@ def slice_beds(beds: list[str] | None = None, open_viewer: bool = True) -> str:
 
     Args:
         beds: bed names (default: all beds).
-        open_viewer: start the viewer and open it in the browser (once per session).
+        open_viewer: start the viewer and open it (the app window if installed, else the browser; once per session).
     """
     global _viewer_opened
     j = job()
@@ -550,7 +550,7 @@ def slice_beds(beds: list[str] | None = None, open_viewer: bool = True) -> str:
         try:
             started = launch.ensure_running()
             if started or not _viewer_opened:
-                launch.open_browser()
+                launch.open_ui()
                 _viewer_opened = True
             viewer = launch.URL
         except Exception as e:
@@ -561,10 +561,11 @@ def slice_beds(beds: list[str] | None = None, open_viewer: bool = True) -> str:
 
 @tool()
 def open_viewer() -> str:
-    """Start the viewer (if needed) and open it in the browser. It shows the newest job and follows new slices."""
+    """Start the viewer (if needed) and open it (the app window if installed, else the browser).
+    It shows the newest job and follows new slices."""
     global _viewer_opened
     launch.ensure_running()
-    launch.open_browser()
+    launch.open_ui()
     _viewer_opened = True
     return _out({"viewer": launch.URL})
 

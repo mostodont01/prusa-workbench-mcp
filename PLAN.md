@@ -43,7 +43,7 @@ into the folder by hand too.
 - Never starts a print. Sending is my decision, done in the viewer.
 
 ### 3. Viewer app
-- Local web app (small Python server + three.js in the browser; maybe its own window later).
+- Local web app (small Python server + three.js in the browser), also as its own window (`app_window.py`).
 - Reads the G-code and colors the toolpaths by type using PrusaSlicer's feature labels (`;TYPE:` comments: perimeter, infill, support…).
 - Rotate/zoom the bed, a layer slider, **tabs to switch between beds**.
 - A side panel per bed: settings used, print time, filament, warnings.
@@ -177,4 +177,14 @@ into the folder by hand too.
 - Viewer "Delete…" dialog (pick jobs, current one preselected) and MCP `delete_jobs`. Job folders go to the
   desktop trash (`gio trash`), permanently deleted only if there is no trash. Only plain job folders directly in the
   jobs root can be deleted (not `_cache`, no paths).
+
+## App window (2026-11-01)
+- The user asked for a PWA, but the default browser is Firefox, which can't install web apps on Linux (Taskbar Tabs
+  is Windows-only so far), and no Chromium-based browser is installed. So: `app_window.py`, a GTK 3 + WebKit2 4.1
+  window (system python3, same as the login window), `Gtk.Application` with id `io.github.mostodont01.PrusaWorkbench`
+  (single instance), `--install` writes `~/.local/share/applications/<id>.desktop` + icon.
+- WebKitGTK 2.52: WebGL2 works. Forcing `HardwareAccelerationPolicy.ALWAYS` aborted without a GL context, so the
+  default policy is used. It always needs OpenGL, so it can't be tested offscreen; `--snapshot` opens a window
+  briefly and saves the 3D view via `window.__viewerSnapshot()` (WebKit's own snapshot needs python3-gi-cairo).
+- The MCP server's `slice` / `open_viewer` open the app window when it's installed (else the browser).
 

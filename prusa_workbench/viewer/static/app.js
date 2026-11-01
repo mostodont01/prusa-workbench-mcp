@@ -270,6 +270,9 @@ function requestRender() {
   });
 }
 
+// For tests (app window snapshot): render now and return the 3D view as a PNG data URL.
+window.__viewerSnapshot = () => { renderer.render(scene, camera); return el.canvas.toDataURL('image/png'); };
+
 function resize() {
   const { clientWidth: w, clientHeight: h } = el.view;
   if (!w || !h) return;

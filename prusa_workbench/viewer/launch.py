@@ -43,6 +43,26 @@ def ensure_running() -> bool:
     raise RuntimeError(f"viewer did not start, see {CACHE_DIR / 'viewer.log'}")
 
 
+APP_ID = "io.github.mostodont01.PrusaWorkbench"
+GTK_PYTHON = os.environ.get("PRUSA_WORKBENCH_GTK_PYTHON", "/usr/bin/python3")
+
+
+def open_ui() -> None:
+    """Open the viewer: the app window if it's installed (app_window --install), else the browser.
+    The app window is single-instance, so this just raises it when it's already open.
+    PRUSA_WORKBENCH_OPEN=browser forces the browser."""
+    data = Path(os.environ.get("XDG_DATA_HOME", "~/.local/share")).expanduser()
+    if os.environ.get("PRUSA_WORKBENCH_OPEN") != "browser" and (data / "applications" / f"{APP_ID}.desktop").exists():
+        try:
+            subprocess.Popen([GTK_PYTHON, "-m", "prusa_workbench.app_window"], cwd=REPO,
+                             env=dict(os.environ, PYTHONPATH=str(REPO)), stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            return
+        except OSError:
+            pass
+    open_browser()
+
+
 def open_browser(url: str = URL) -> None:
     for cmd in (["xdg-open", url], ["open", url]):
         try:
