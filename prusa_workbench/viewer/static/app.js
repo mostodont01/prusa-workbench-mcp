@@ -282,6 +282,9 @@ function resize() {
   requestRender();
 }
 new ResizeObserver(resize).observe(el.view);
+// The layer slider is a rotated horizontal slider: its length follows the height of its wrapper.
+const vslider = document.querySelector('.vslider');
+new ResizeObserver(() => { el.layer.style.width = `${vslider.clientHeight}px`; }).observe(vslider);
 
 // ---------- worker ----------
 

@@ -118,11 +118,16 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 #layerbox .num { white-space: pre-line; line-height: 1.25; }
 #layerTop { color: var(--text); }
+/* A normal horizontal slider turned 90 degrees (left = bottom layer). Not writing-mode: WebKit (the app window)
+   ignores it on range inputs. app.js sets the slider's length to the wrapper's height. */
+.vslider { flex: 1; position: relative; width: 24px; min-height: 0; }
 #layer {
-  flex: 1;
-  writing-mode: vertical-lr;
-  direction: rtl;
-  width: 24px;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100px;
+  margin: 0;
+  transform: translate(-50%, -50%) rotate(-90deg);
   accent-color: var(--accent);
   cursor: pointer;
 }
