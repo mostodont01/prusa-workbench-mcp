@@ -167,9 +167,14 @@ into the folder by hand too.
 - Preview draws painted triangles see-through on top (they're usually inside holes, facing down).
 
 ## Tests
-- `pytest`: 29 tests, ~20 s. `-m slicer` = real PrusaSlicer runs that pin down the CLI behavior we depend on.
+- `pytest`: 31 tests, ~30 s. `-m slicer` = real PrusaSlicer runs that pin down the CLI behavior we depend on.
 - Other: arrange (inside bed, gaps, rotation, leftovers), lay flat, watertight reload (the triangle-soup bug),
   paint following the object, 3MF contents, text + binary thumbnails (CRC, block order), G-code summary, viewer
   request rules, and the browser G-code parser incl. G2/G3 arcs (run in Node).
 - Not covered: the Prusa Connect API itself (reverse-engineered; can only be tested with a real account).
+
+## Deleting jobs (2026-11-01)
+- Viewer "Delete…" dialog (pick jobs, current one preselected) and MCP `delete_jobs`. Job folders go to the
+  desktop trash (`gio trash`), permanently deleted only if there is no trash. Only plain job folders directly in the
+  jobs root can be deleted (not `_cache`, no paths).
 

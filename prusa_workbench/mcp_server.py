@@ -14,7 +14,7 @@ import trimesh
 from mcp.server.mcpserver import Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from . import config, onshape, slicer
+from . import config, onshape, slicer, trash
 from . import mesh as mz
 from .job import Job, supports_settings
 from .viewer import launch
@@ -140,6 +140,23 @@ def open_job(name: str) -> str:
     global _job
     _job = Job.open(name)
     return _out(_job.summary())
+
+
+@tool()
+def delete_jobs(names: list[str]) -> str:
+    """Delete whole jobs (folder with models, beds and slices), e.g. to clean up bad or old slices. They go to the
+    desktop trash, so the user can get them back. Only do this when the user asked for it.
+
+    Args:
+        names: job names exactly as list_jobs shows them.
+    """
+    global _job
+    out = {}
+    for n in names:
+        out[n] = trash.delete_job(config.JOBS_DIR, n)
+        if _job and _job.name == n:
+            _job = None
+    return _out({"deleted": out, "note": "'trash' = in the desktop trash (recoverable)"})
 
 
 @tool()

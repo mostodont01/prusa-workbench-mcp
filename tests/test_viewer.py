@@ -104,3 +104,20 @@ def test_js_parser_arcs():
         assert all(math.hypot(x, y) == pytest.approx(10, abs=1e-3) for x, y in pts)
         assert pts[-1] == pytest.approx((-10, 0), abs=1e-4)
         assert min(pts, key=lambda p: abs(p[0]))[1] == pytest.approx(mid_y, abs=0.5)
+
+
+def test_delete_only_plain_job_folders(tmp_path):
+    from prusa_workbench import trash
+    (tmp_path / "2026-01-01-job").mkdir()
+    (tmp_path / "_cache").mkdir()
+    assert trash.job_folder(tmp_path, "2026-01-01-job") == tmp_path / "2026-01-01-job"
+    for bad in ("_cache", "..", ".", "", "a/b", "../x", ".hidden"):
+        with pytest.raises((ValueError, FileNotFoundError)):
+            trash.job_folder(tmp_path, bad)
+    with pytest.raises(FileNotFoundError):
+        trash.job_folder(tmp_path, "no-such-job")
+
+
+def test_delete_needs_header(viewer):
+    body = json.dumps({"names": ["2026-01-01-job"]}).encode()
+    assert _req(viewer + "/api/jobs/delete", "POST", {}, body)[0] == 403

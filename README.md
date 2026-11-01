@@ -26,6 +26,7 @@ It never starts a print: the result opens in the viewer and you send it from the
 | Tool | What it does |
 |---|---|
 | `new_job` / `open_job` / `list_jobs` / `get_job` | jobs live in `~/print-jobs/<date>-<name>/` (`job.json` + models), so work can be resumed |
+| `delete_jobs` | delete whole jobs (to the desktop trash) |
 | `list_profiles` / `find_setting` | print profiles + filaments; search PrusaSlicer setting names with their current values |
 | `add_model` | STL / 3MF / OBJ / STEP (STEP through PrusaSlicer), with copies |
 | `add_from_onshape` | parts straight from an Onshape part studio (API keys from `~/onshape-mcp/.env`) |
@@ -51,6 +52,8 @@ Stdlib only (three.js loads from a CDN, so the browser needs internet). The MCP 
 Options: `--jobs DIR`, `--port N`, `--job NAME`.
 
 - Shows the newest job and follows new ones as they appear; pick an older job in the **Job** menu.
+- **Delete…** next to it cleans up old or bad jobs (several at once). They go to the desktop trash, so they can
+  be restored.
 - One tab per bed (`*.gcode` in the job folder). Re-sliced beds reload automatically.
 - Toolpaths in PrusaSlicer's colors; click legend items to hide features, tick **Travel** to see travel moves.
 - Keys: `↑/↓` layer, `←/→` move within the layer (`Shift` = ×10), `S` single layer, `1/2/3` iso/top/front, `Z` zoom to print.

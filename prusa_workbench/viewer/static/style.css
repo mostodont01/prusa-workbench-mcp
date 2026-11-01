@@ -191,7 +191,12 @@ ul.warn li::before { content: "⚠ "; }
 }
 
 /* ---------- send dialog ---------- */
-dialog#sendDialog {
+button.ghost {
+  background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 4px 9px;
+  color: var(--muted); cursor: pointer;
+}
+button.ghost:hover { color: var(--text); background: var(--panel-2); }
+dialog#sendDialog, dialog#deleteDialog {
   width: min(460px, calc(100vw - 32px));
   background: var(--panel);
   color: var(--text);
@@ -200,7 +205,7 @@ dialog#sendDialog {
   padding: 18px 20px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
 }
-dialog#sendDialog::backdrop { background: rgba(0, 0, 0, .55); }
+dialog#sendDialog::backdrop, dialog#deleteDialog::backdrop { background: rgba(0, 0, 0, .55); }
 #sendDialog h2 { font-size: 16px; margin: 0 0 12px; }
 #sendDialog p { margin: 0 0 10px; }
 #sendDialog .what { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; margin-bottom: 12px; }
@@ -229,3 +234,20 @@ dialog#sendDialog::backdrop { background: rgba(0, 0, 0, .55); }
 #sendDialog fieldset.actionsel label { display: flex; gap: 8px; align-items: center; padding: 3px 0; cursor: pointer; }
 #sendDialog fieldset.actionsel input { accent-color: var(--accent); margin: 0; }
 #sendDialog #actionHint { margin-top: 6px; min-height: 2.6em; }
+
+#deleteDialog h2 { font-size: 16px; margin: 0 0 6px; }
+#deleteList { max-height: 50vh; overflow-y: auto; margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; }
+#deleteList label {
+  display: grid; grid-template-columns: 16px 1fr auto; gap: 10px; align-items: center;
+  padding: 7px 10px; border-bottom: 1px solid var(--line); cursor: pointer;
+}
+#deleteList label:last-child { border-bottom: 0; }
+#deleteList label:hover { background: var(--panel-2); }
+#deleteList input, .selall input { accent-color: var(--bad); margin: 0; }
+#deleteList .meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+#deleteList .cur { color: var(--accent); font-size: 11px; margin-left: 6px; }
+#deleteDialog .actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; align-items: center; }
+#deleteDialog .actions .left { margin-right: auto; display: flex; gap: 6px; align-items: center; color: var(--muted); }
+#deleteDialog button { border-radius: 6px; padding: 6px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--panel-2); }
+#deleteDialog button.danger { background: var(--bad); color: #fff; border: 0; font-weight: 600; }
+#deleteDialog button:disabled { opacity: .45; cursor: not-allowed; }

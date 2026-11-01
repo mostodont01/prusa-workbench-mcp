@@ -21,6 +21,7 @@
       <span>Job</span>
       <select id="job"></select>
     </label>
+    <button id="deleteJobs" class="ghost" title="Delete jobs (they go to the trash)">Delete…</button>
     <nav id="tabs" aria-label="Beds"></nav>
     <div class="spacer"></div>
     <button id="send" disabled title="Upload this bed's G-code to a printer through Prusa Connect">Send to printer</button>
@@ -62,6 +63,19 @@
       <h2 id="sendTitle">Send to printer</h2>
       <div id="sendBody"></div>
       <div class="actions" id="sendActions"></div>
+    </form>
+  </dialog>
+
+  <dialog id="deleteDialog" aria-labelledby="deleteTitle">
+    <form method="dialog">
+      <h2 id="deleteTitle">Delete jobs</h2>
+      <p class="note">Deleted jobs go to the trash, so you can still get them back from there.</p>
+      <div id="deleteList"></div>
+      <div class="actions">
+        <label class="left selall"><input type="checkbox" id="deleteAll"> all</label>
+        <button value="cancel">Cancel</button>
+        <button type="button" class="danger" id="deleteBtn" disabled>Delete</button>
+      </div>
     </form>
   </dialog>
 

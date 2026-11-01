@@ -519,7 +519,7 @@ function step(input, d) {
 }
 
 document.addEventListener('keydown', (ev) => {
-  if (document.getElementById('sendDialog').open) return;
+  if (document.getElementById('sendDialog').open || document.getElementById('deleteDialog').open) return;
   const tag = ev.target.tagName;
   if (tag === 'SELECT' || (tag === 'INPUT' && ev.target.type !== 'checkbox')) return;
   const k = ev.shiftKey ? 10 : 1;
@@ -818,6 +818,56 @@ dlg.addEventListener('click', async (ev) => {
   else if (id === 'retryBtn') openSend();
   else if (id === 'logoutBtn') { await post('/api/connect/logout'); renderLogin(); }
 });
+
+// ---------- delete jobs ----------
+
+const delDlg = document.getElementById('deleteDialog');
+const delList = document.getElementById('deleteList');
+const delBtn = document.getElementById('deleteBtn');
+const delAll = document.getElementById('deleteAll');
+
+function delChecked() { return [...delList.querySelectorAll('input:checked')].map((i) => i.value); }
+function delUpdate() {
+  const n = delChecked().length, total = delList.querySelectorAll('input').length;
+  delBtn.disabled = n === 0;
+  delBtn.textContent = n ? `Delete ${n} job${n === 1 ? '' : 's'}` : 'Delete';
+  delAll.checked = n > 0 && n === total;
+  delAll.indeterminate = n > 0 && n < total;
+}
+
+function openDelete() {
+  const when = (t) => new Date(t * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+  delList.innerHTML = state.jobs.length ? state.jobs.map((j) => `
+    <label><input type="checkbox" value="${esc(j.name)}" ${j.name === state.job?.name ? 'checked' : ''}>
+      <span>${esc(j.name)}${j.name === state.job?.name ? '<span class="cur">shown now</span>' : ''}</span>
+      <span class="meta">${j.beds.length} bed${j.beds.length === 1 ? '' : 's'} · ${esc(when(j.mtime))}</span></label>`).join('')
+    : '<p class="note" style="padding:10px">No jobs.</p>';
+  delUpdate();
+  delDlg.showModal();
+}
+
+async function doDelete() {
+  const names = delChecked();
+  if (!names.length) return;
+  delBtn.disabled = true;
+  delBtn.textContent = 'Deleting…';
+  const r = await post('/api/jobs/delete', { names });
+  const errors = Object.entries(r.errors || {});
+  if (errors.length) alert('Could not delete:\n' + errors.map(([n, e]) => `${n}: ${e}`).join('\n'));
+  delDlg.close();
+  state.jobs = await getJSON('/api/jobs').catch(() => state.jobs);
+  if (state.job && !state.jobs.some((j) => j.name === state.job.name)) {
+    clearCache();
+    state.follow = true;
+    if (state.jobs.length) await selectJob(state.jobs[0].name);
+    else { state.job = null; state.bed = null; renderJobSelect(); renderTabs(); updateUrl(); await showBed(); }
+  } else renderJobSelect();
+}
+
+document.getElementById('deleteJobs').addEventListener('click', openDelete);
+delList.addEventListener('change', delUpdate);
+delAll.addEventListener('change', () => { delList.querySelectorAll('input').forEach((i) => { i.checked = delAll.checked; }); delUpdate(); });
+delBtn.addEventListener('click', doDelete);
 
 // ---------- start ----------
 
