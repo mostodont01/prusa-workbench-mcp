@@ -256,3 +256,9 @@ dialog#sendDialog::backdrop, dialog#deleteDialog::backdrop { background: rgba(0,
 #deleteDialog button { border-radius: 6px; padding: 6px 14px; cursor: pointer; border: 1px solid var(--line); background: var(--panel-2); }
 #deleteDialog button.danger { background: var(--bad); color: #fff; border: 0; font-weight: 600; }
 #deleteDialog button:disabled { opacity: .45; cursor: not-allowed; }
+#sendDialog .bedlist { margin-top: 6px; }
+#sendDialog .bedlist li { padding: 1px 0; color: var(--muted); }
+#sendDialog .bedlist li b { color: var(--text); }
+#sendDialog .sendrows li { padding: 5px 0; border-bottom: 1px solid var(--line); }
+#sendDialog .sendrows li:last-child { border-bottom: 0; }
+#sendDialog .sendrows .note { margin-left: 6px; }

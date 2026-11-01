@@ -54,9 +54,13 @@ python3 -m prusa_workbench.viewer --open        # http://127.0.0.1:8765, reads ~
 PYTHONPATH=$PWD /usr/bin/python3 -m prusa_workbench.app_window --install     # once; --uninstall removes it
 ```
 
-Then start **Prusa Workbench** from the app menu. It starts the viewer server if needed, and links to other sites
-(Prusa Connect) open in the browser. Every time Claude slices, this window opens (or comes to the front) and
-shows the sliced job; `PRUSA_WORKBENCH_OPEN=browser` uses the browser instead. Needs the system `python3` with
+Then start **Prusa Workbench** from the app menu. It starts the viewer server if needed. Every time Claude slices,
+this window opens (or comes to the front) and shows the sliced job; `PRUSA_WORKBENCH_OPEN=browser` uses the
+browser instead.
+
+The window has two tabs, **Workbench** and **Prusa Connect** (Ctrl+1 / Ctrl+2; back, reload and "open in browser"
+in the title bar). Log in to Connect there once; the login is kept in `~/.local/share/prusa-workbench/`. After a
+successful send it switches to the printer's page in Connect, and when Claude slices it switches back. Needs the system `python3` with
 `gir1.2-webkit2-4.1` (same as the Prusa login window).
 
 Stdlib only (three.js loads from a CDN, so the browser needs internet). The MCP server starts it by itself.
@@ -68,8 +72,9 @@ Options: `--jobs DIR`, `--port N`, `--job NAME`.
 - One tab per bed (`*.gcode` in the job folder). Re-sliced beds reload automatically.
 - Toolpaths in PrusaSlicer's colors; click legend items to hide features, tick **Travel** to see travel moves.
 - Keys: `↑/↓` layer, `←/→` move within the layer (`Shift` = ×10), `S` single layer, `1/2/3` iso/top/front, `Z` zoom to print.
-- **Send to printer** uploads the bed through Prusa Connect (see below): just upload, add to the queue, or print
-  now (first in the queue; it starts once the printer is set READY, i.e. someone confirmed the bed is clear).
+- **Send to printer** uploads through Prusa Connect (see below): all beds of the job in order (or just the shown
+  bed), then just upload, add to the queue, or print now (first in the queue, bed-1 then bed-2…; printing starts
+  once the printer is set READY, i.e. someone confirmed the bed is clear).
 - Side panel: thumbnail, print time, filament, profiles, settings used (● = changed from the profile), objects with
   their own settings, warnings.
 

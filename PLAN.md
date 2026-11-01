@@ -193,3 +193,18 @@ into the folder by hand too.
   with the X server's current time + a short keep-above: tested, it comes to the front and gets focus. Scale is 1
   here, so no XWayland blur; WebGL works the same.
 
+## Send all beds + Connect tab (2026-11-01)
+- Send dialog: "All N beds, in order" (default when there are several) or only the shown bed. Beds are sent one
+  after another from the page (per-bed progress); print now puts them at queue positions 0, 1, 2…, add to queue
+  appends each. File names `<prefix>-bed-N`.
+- Printer model check compares the G-code's `printer_model` with Connect's `printer_model` (both `MINIIS`); the
+  old check compared it with the display name and warned wrongly for the MINI.
+- App window: GTK HeaderBar + StackSwitcher, tabs Workbench / Prusa Connect. Connect is a second WebKit view,
+  created on first use (a placeholder keeps the tab visible until then), same persistent WebsiteDataManager +
+  SQLite cookies (`~/.local/share/prusa-workbench/webkit`) so the login stays. Prusa links from the Workbench and
+  Connect's new-window links stay in the Connect tab; other sites go to the browser.
+- Page → app: `window.webkit.messageHandlers.workbench.postMessage(JSON)`: `{action: "connect", url}` after a
+  fully successful send (dialog shows the result for 1.5 s), `{action: "workbench"}` when Claude slices (/api/show).
+- `PRUSA_WORKBENCH_APP_SELFTEST=1` + `PRUSA_WORKBENCH_APP_LOG=file`: clicks the Connect tab, sends both messages,
+  logs the tab state, quits (needs a real window).
+

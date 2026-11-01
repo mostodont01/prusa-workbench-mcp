@@ -17,7 +17,7 @@ the summary, overrides and warnings; for G-code dropped in by hand the summary i
     POST /api/jobs/delete         {names: [...]} -> job folders go to the desktop trash
     POST /api/show                {job} -> open pages switch to this job (Claude just sliced it)
     GET  /api/show                {seq, job} (polled by the page)
-    POST /api/send                {job, bed, printer_uuid, filename, action: upload|queue|print}
+    POST /api/send                {job, bed, printer_uuid, filename, action: upload|queue|print[, position]}
                                   upload (binary G-code when possible), then optionally queue it (print = first
                                   in the queue: starts once the file is on a printer a person has set READY)
 POST requests need the X-Workbench header (blocks cross-site form posts) and every /api request a local Host
@@ -236,8 +236,10 @@ def make_handler(jobs: Jobs, login: Login):
                 res = connect.upload(f, uuid, name, team_id=p.get("team_id"))
                 res.update({"format": kind, "note": note, "printer_state": p.get("state"), "action": action})
                 if action in ("queue", "print"):
+                    # print: at `position` (default 0 = next; several beds in order use 0, 1, 2, ...); queue: at the end
+                    pos = max(0, int(body.get("position") or 0)) if action == "print" else None
                     try:
-                        res["queue"] = connect.enqueue(uuid, res["team_id"], res.get("hash"), first=(action == "print"))
+                        res["queue"] = connect.enqueue(uuid, res["team_id"], res.get("hash"), position=pos)
                     except Exception as e:   # the upload itself worked; say so
                         res["queue_error"] = str(e)
             except connect.LoginRequired as e:

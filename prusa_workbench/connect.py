@@ -218,11 +218,12 @@ def queue_length(printer_uuid: str) -> int:
     return int((q.get("pager") or {}).get("total", len(q.get("planned_jobs", []))))
 
 
-def enqueue(printer_uuid: str, team_id, file_hash: str, first: bool) -> dict:
-    """Put an uploaded file into the printer's queue: first (print next) or last."""
+def enqueue(printer_uuid: str, team_id, file_hash: str, position: int | None = None) -> dict:
+    """Put an uploaded file into the printer's queue at `position` (0 = prints next), or at the end."""
     if not file_hash:
         raise ConnectError("Connect did not return a file hash, so the file can't be queued (it is uploaded)")
-    position = 0 if first else queue_length(printer_uuid)
+    if position is None:
+        position = queue_length(printer_uuid)
     res = _request("POST", f"/printers/{printer_uuid}/queue",
                    json_body={"hash": file_hash, "team_id": team_id, "position": position})
     return {"position": position, "response": res if isinstance(res, dict) else None}

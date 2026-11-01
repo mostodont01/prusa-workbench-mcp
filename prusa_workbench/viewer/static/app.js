@@ -308,6 +308,8 @@ function parseGcode(url, onProgress) {
 // ---------- state ----------
 
 const params = new URLSearchParams(location.search);
+// Set only inside the app window (GTK/WebKit): messages to it switch between the Workbench and Prusa Connect tabs.
+const appBridge = window.webkit?.messageHandlers?.workbench;
 const state = {
   follow: !params.get('job'),
   jobs: [],
@@ -651,6 +653,7 @@ async function poll() {
     if (showSeq === null) showSeq = sh.seq;            // don't jump to an old request on page load
     else if (sh.seq !== showSeq) {
       showSeq = sh.seq;
+      appBridge?.postMessage(JSON.stringify({ action: 'workbench' }));   // app window: back to this tab
       state.follow = true;                              // back to "newest", which is what was just sliced
       state.jobs = await getJSON('/api/jobs');
       if (sh.job && sh.job !== state.job?.name) await selectJob(sh.job);
@@ -701,12 +704,14 @@ function dlgSet(body, actions) {
 
 function modelMismatch(bed, printer) {
   const norm = (x) => (x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const p = norm(printer?.model);
-  const model = bed.settings?.printer_model, profile = bed.settings?.printer_settings_id;
-  if (!p || !(model || profile)) return null;
-  const g = norm(model);
-  const ok = g ? (g.includes(p) || p.includes(g)) : norm(profile).includes(p);   // older summaries: profile name only
-  return ok ? null : `The G-code was sliced for ${model || profile}, this printer is a ${printer.model}.`;
+  const model = norm(bed.settings?.printer_model), profile = norm(bed.settings?.printer_settings_id);
+  const code = norm(printer?.printer_model), name = norm(printer?.model);   // e.g. MINIIS / "Original Prusa MINI"
+  let ok = true;
+  if (model && code) ok = model === code;                       // same model code as in the G-code (best check)
+  else if (profile && name) ok = profile.includes(name);        // profile name contains the printer type name
+  else if (model && name) ok = name.includes(model.replace(/IS$/, '')) || model.includes(name);
+  return ok ? null
+    : `The G-code was sliced for ${bed.settings?.printer_model || bed.settings?.printer_settings_id}, this printer is a ${printer.model || printer.printer_model}.`;
 }
 
 async function openSend() {
@@ -749,18 +754,24 @@ function renderSendForm(bed) {
     return;
   }
   const def = printers.find((p) => p.uuid === connectInfo.default_printer) ?? printers[0];
-  const warnings = bed.warnings ?? [];
+  const sendable = state.job.beds.filter((b) => b.gcode);
+  const many = sendable.length > 1;
+  const bedLine = (b) => `<b>${esc(b.name)}</b> · ${esc(b.print_time ?? '')}${b.filament_g != null ? ` · ${b.filament_g.toFixed(1)} g` : ''} ·
+      ${esc(b.settings?.print_settings_id ?? '')}`;
   dlgSet(`
-    <div class="what"><b>${esc(state.job.name)} / ${esc(bed.name)}</b><br>
-      ${esc(bed.print_time ?? '')}${bed.filament_g != null ? ` · ${bed.filament_g.toFixed(1)} g` : ''} ·
-      ${esc(bed.settings?.print_settings_id ?? '')} · ${esc(bed.settings?.filament_settings_id ?? '')}</div>
-    ${warnings.map((w) => `<p class="warn">${esc(w)}</p>`).join('')}
+    <div class="what"><b>${esc(state.job.name)}</b>
+      ${many ? `<fieldset class="actionsel" style="margin:6px 0 0">
+        <label><input type="radio" name="sendWhat" value="all" checked> All ${sendable.length} beds, in order</label>
+        <label><input type="radio" name="sendWhat" value="one"> Only ${esc(bed.name)}</label></fieldset>` : ''}
+      <ul class="plain bedlist" id="bedList"></ul></div>
+    <div id="bedWarn"></div>
     <label class="field" for="printerSel">Printer</label>
     <select id="printerSel">${printers.map((p) => `<option value="${esc(p.uuid)}" ${p.uuid === def.uuid ? 'selected' : ''}>
       ${esc(p.name)}${p.model ? ` — ${esc(p.model)}` : ''}${p.state ? ` — ${esc(p.state)}` : ''}</option>`).join('')}</select>
     <div id="printerWarn"></div>
     <label class="field" for="fileName">File name on the printer</label>
-    <input type="text" id="fileName" value="${esc(`${state.job.name}-${bed.name}`)}" spellcheck="false">
+    <input type="text" id="fileName" value="${esc(state.job.name)}" spellcheck="false">
+    <p class="note" id="fileHint" style="margin-top:4px"></p>
     <fieldset class="actionsel">
       <legend class="field">After uploading</legend>
       <label><input type="radio" name="sendAction" value="upload"> Just upload</label>
@@ -772,57 +783,94 @@ function renderSendForm(bed) {
      <button value="cancel">Cancel</button><button type="button" class="primary" id="uploadBtn">Upload</button>`);
   const sel = document.getElementById('printerSel');
   const radios = [...document.querySelectorAll('input[name=sendAction]')];
+  const whatRadios = [...document.querySelectorAll('input[name=sendWhat]')];
   (radios.find((r) => r.value === connectInfo.default_action) ?? radios[0]).checked = true;
   const update = () => {
+    const beds = selectedBeds();
     const p = printers.find((x) => x.uuid === sel.value);
-    const msgs = [modelMismatch(bed, p), p?.state && /OFFLINE/i.test(p.state) ? 'The printer is offline in Prusa Connect.' : null].filter(Boolean);
+    document.getElementById('bedList').innerHTML = beds.map((b) => `<li>${bedLine(b)}</li>`).join('');
+    document.getElementById('bedWarn').innerHTML = beds.flatMap((b) => (b.warnings ?? []).map((w) => `${b.name}: ${w}`))
+      .map((w) => `<p class="warn">${esc(w)}</p>`).join('');
+    const mism = [...new Set(beds.map((b) => modelMismatch(b, p)).filter(Boolean))];
+    const msgs = [...mism, p?.state && /OFFLINE/i.test(p.state) ? 'The printer is offline in Prusa Connect.' : null].filter(Boolean);
     document.getElementById('printerWarn').innerHTML = msgs.map((m) => `<p class="warn" style="margin-top:6px">${esc(m)}</p>`).join('');
+    const prefix = document.getElementById('fileName').value.trim() || state.job.name;
+    document.getElementById('fileHint').textContent = `Saved as ${beds.map((b) => `${prefix}-${b.name}`).join(', ')}`;
     const canQueue = p?.queue !== false;
     radios.filter((r) => r.value !== 'upload').forEach((r) => { r.disabled = !canQueue; if (!canQueue && r.checked) radios[0].checked = true; });
     const action = radios.find((r) => r.checked).value;
     const st = (p?.state || '').toUpperCase();
+    const order = beds.length > 1 ? ` ${beds.map((b) => b.name).join(', then ')}, in this order.` : '';
     const hint = {
-      upload: 'The file goes onto the printer. Start it on the printer or in Prusa Connect.',
-      queue: 'The file goes onto the printer and to the end of its queue in Prusa Connect.',
-      print: st === 'READY'
+      upload: `The file${beds.length > 1 ? 's go' : ' goes'} onto the printer. Start ${beds.length > 1 ? 'them' : 'it'} on the printer or in Prusa Connect.`,
+      queue: `Goes onto the printer and to the end of its queue in Prusa Connect.${order}`,
+      print: (st === 'READY'
         ? 'The printer is READY: it starts printing as soon as the file has arrived.'
-        : `The printer is ${st || 'not ready'}. It starts once someone presses "Set ready" on the printer or in Prusa Connect (that's the "bed is clear" check).`,
+        : `The printer is ${st || 'not ready'}. It starts once someone presses "Set ready" on the printer or in Prusa Connect (that's the "bed is clear" check).`)
+        + (beds.length > 1 ? ` Front of the queue:${order}` : ''),
     }[action];
     document.getElementById('actionHint').textContent = canQueue ? hint : hint + ' (This printer has no queue in Prusa Connect.)';
   };
+  function selectedBeds() {
+    return !many || whatRadios.find((r) => r.checked)?.value === 'all' ? sendable : [bed];
+  }
   sel.addEventListener('change', update);
-  radios.forEach((r) => r.addEventListener('change', update));
+  [...radios, ...whatRadios].forEach((r) => r.addEventListener('change', update));
+  document.getElementById('fileName').addEventListener('input', update);
   update();
 }
 
+// Inside the app window: ask it to show Prusa Connect (the second tab). In a browser this does nothing.
+function showConnect(url) {
+  if (!appBridge) return false;
+  appBridge.postMessage(JSON.stringify({ action: 'connect', url }));
+  return true;
+}
+
 async function doUpload() {
-  const bed = currentBed();
+  const one = document.querySelector('input[name=sendWhat]:checked')?.value === 'one';
+  const beds = one || !document.querySelector('input[name=sendWhat]') ? [currentBed()] : state.job.beds.filter((b) => b.gcode);
   const uuid = document.getElementById('printerSel').value;
-  const filename = document.getElementById('fileName').value;
+  const prefix = document.getElementById('fileName').value.trim() || state.job.name;
   const action = document.querySelector('input[name=sendAction]:checked')?.value ?? 'upload';
   const printer = (connectInfo.printers || []).find((p) => p.uuid === uuid);
-  dlgSet(`<p><span class="spinner"></span>Preparing binary G-code and uploading to ${esc(printer?.name ?? 'the printer')}…</p>`, '');
-  const r = await post('/api/send', { job: state.job.name, bed: bed.name, printer_uuid: uuid, filename, action });
-  if (r.ok) {
-    const mb = (r.size / 1e6).toFixed(2);
-    const link = `<a href="${esc(r.printer_page)}" target="_blank" rel="noopener">Prusa Connect</a>`;
-    let next;
-    if (r.queue_error) next = `<p class="warn">Uploaded, but adding it to the queue failed: ${esc(r.queue_error)}</p><p>Start it on the printer or in ${link}.</p>`;
-    else if (action === 'print') next = (r.printer_state || '').toUpperCase() === 'READY'
-      ? `<p>It's first in the queue and starts as soon as the file has reached the printer. Follow it in ${link}.</p>`
-      : `<p>It's first in the queue. The printer is ${esc(r.printer_state || 'not ready')}: press <b>Set ready</b> on the printer or in ${link} when the bed is clear, and it starts.</p>`;
-    else if (action === 'queue') next = `<p>Added to the queue (position ${(r.queue?.position ?? 0) + 1}). See it in ${link}.</p>`;
-    else next = `<p>Start it on the printer, or in ${link}.</p>`;
-    dlgSet(`<p class="ok">Uploaded to ${esc(printer?.name ?? 'the printer')}${r.path ? ` as <b>${esc(r.path)}</b>` : ''}.</p>
-      <p class="note">${r.format === 'binary' ? 'Binary G-code' : 'Text G-code'}, ${mb} MB, to Connect in ${r.seconds} s.
-        Connect now copies it to the printer over its own network link.${r.note ? ` (${esc(r.note)})` : ''}</p>
-      ${next}`,
-      '<button value="cancel" class="primary">Done</button>');
-  } else if (r.login_required) {
-    renderLogin(r.error);
+  const pname = esc(printer?.name ?? 'the printer');
+  const rows = beds.map((b) => ({ bed: b, status: 'waiting', r: null }));
+  const render = (done) => {
+    const icon = { waiting: '·', sending: '<span class="spinner"></span>', ok: '<span class="ok">✓</span>', fail: '<span class="err">✗</span>' };
+    dlgSet(`<p>${done ? '' : '<span class="spinner"></span>'}Sending to ${pname}…</p>
+      <ul class="plain sendrows">${rows.map((x) => `<li>${icon[x.status]} <b>${esc(x.bed.name)}</b>
+        ${x.r?.ok ? `<span class="note">${x.r.format === 'binary' ? 'binary' : 'text'}, ${(x.r.size / 1e6).toFixed(2)} MB, ${x.r.seconds} s${
+          x.r.queue ? `, queue position ${x.r.queue.position + 1}` : ''}</span>` : ''}
+        ${x.r && !x.r.ok ? `<div class="err">${esc(x.r.error)}</div>` : ''}
+        ${x.r?.queue_error ? `<div class="warn">uploaded, but not queued: ${esc(x.r.queue_error)}</div>` : ''}</li>`).join('')}</ul>`, '');
+  };
+  for (let i = 0; i < rows.length; i++) {
+    rows[i].status = 'sending';
+    render(false);
+    const r = await post('/api/send', { job: state.job.name, bed: rows[i].bed.name, printer_uuid: uuid,
+      filename: `${prefix}-${rows[i].bed.name}`, action, position: i });
+    rows[i].r = r;
+    rows[i].status = r.ok ? 'ok' : 'fail';
+    if (r.login_required) { renderLogin(r.error); return; }
+  }
+  render(true);
+  const allOk = rows.every((x) => x.r.ok && !x.r.queue_error);
+  const page = rows.find((x) => x.r?.printer_page)?.r.printer_page;
+  const link = page ? `<a href="${esc(page)}" target="_blank" rel="noopener">Prusa Connect</a>` : 'Prusa Connect';
+  let next;
+  if (!allOk) next = `<p class="warn">Not everything went through, see above.</p>`;
+  else if (action === 'print') next = (rows[0].r.printer_state || '').toUpperCase() === 'READY'
+    ? `<p>${rows.length > 1 ? 'They are' : "It's"} first in the queue; printing starts as soon as the file has reached the printer.</p>`
+    : `<p>${rows.length > 1 ? 'They are' : "It's"} first in the queue. The printer is ${esc(rows[0].r.printer_state || 'not ready')}: press <b>Set ready</b> on the printer or in ${link} when the bed is clear, and it starts.</p>`;
+  else if (action === 'queue') next = `<p>Added to the end of the queue.</p>`;
+  else next = `<p>Start ${rows.length > 1 ? 'them' : 'it'} on the printer, or in ${link}.</p>`;
+  const body = dlgBody.innerHTML.replace(/<p>Sending to [^<]*…<\/p>/, `<p class="ok">Sent to ${pname}.</p>`);
+  if (allOk && page && appBridge) {
+    dlgSet(body + next + '<p class="note"><span class="spinner"></span>Opening Prusa Connect…</p>', '');
+    setTimeout(() => { dlg.close(); showConnect(page); }, 1500);
   } else {
-    dlgSet(`<p class="err">Upload failed.</p><p>${esc(r.error)}</p>`,
-      '<button value="cancel">Close</button><button type="button" class="primary" id="retryBtn">Try again</button>');
+    dlgSet(body + next, `${allOk ? '' : '<button type="button" id="retryBtn">Try again</button>'}<button value="cancel" class="primary">Done</button>`);
   }
 }
 
