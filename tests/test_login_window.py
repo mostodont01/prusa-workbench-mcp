@@ -47,7 +47,15 @@ def test_redirect_is_caught():
     py = _python_with_browser_window()
     code = ("from prusa_workbench.connect_login import capture_redirect; "
             f"print(capture_redirect('http://127.0.0.1:{srv.server_address[1]}/', timeout=60))")
-    p = subprocess.run([py, "-c", code], cwd=REPO, env={**os.environ, "PYTHONPATH": str(REPO)},
-                       capture_output=True, text=True, timeout=120)
-    srv.shutdown()
-    assert p.stdout.strip().splitlines()[-1] == "prusaslicer://login?code=abc123&state=s1", p.stdout + p.stderr
+    p = subprocess.Popen([py, "-c", code], cwd=REPO, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                         env={**os.environ, "PYTHONPATH": str(REPO), "PRUSA_WORKBENCH_LOGIN_DEBUG": "1"})
+    try:
+        out, err = p.communicate(timeout=120)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        out, err = p.communicate()
+        pytest.fail(f"login window hung. stdout: {out!r} stderr: {err[-2000:]}")
+    finally:
+        srv.shutdown()
+    lines = out.strip().splitlines()
+    assert lines and lines[-1] == "prusaslicer://login?code=abc123&state=s1", f"stdout: {out!r} stderr: {err[-2000:]}"

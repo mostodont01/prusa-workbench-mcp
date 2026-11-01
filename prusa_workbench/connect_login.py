@@ -12,6 +12,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import secrets
 import sys
 import threading
@@ -67,6 +68,11 @@ def _capture_gtk(start_url, prefix, title, timeout):
     return got.get("url")
 
 
+def _debug(*a):
+    if os.environ.get("PRUSA_WORKBENCH_LOGIN_DEBUG"):
+        print("[login]", *a, file=sys.stderr, flush=True)
+
+
 def _capture_pywebview(start_url, prefix, title, timeout):
     try:
         import webview
@@ -77,47 +83,53 @@ def _capture_pywebview(start_url, prefix, title, timeout):
     done = threading.Event()
     win = webview.create_window(title, start_url, width=520, height=780)
 
-    def hook_webview2():
-        """Windows (Edge WebView2): catch the custom-scheme navigation as it starts and cancel it."""
+    def close_soon():
+        threading.Thread(target=lambda: _safe(win.destroy), daemon=True).start()
+
+    def attach_webview2():
+        """Windows (Edge WebView2): runs on the UI thread right after the browser control exists. Catch the
+        custom-scheme navigation as it starts (also when it comes as a redirect) and cancel it."""
         try:
-            core = win.native.webview.CoreWebView2       # pywebview's WinForms WebView2 control (via pythonnet)
-        except Exception:
-            return False
-        if core is None:
-            return False
+            control = win.native.browser.webview          # pywebview's WinForms WebView2 control
+        except AttributeError as e:
+            _debug("no WebView2 control:", e)
+            return
 
         def on_start(_sender, args):
             uri = str(args.Uri or "")
-            if uri.startswith(prefix):
-                args.Cancel = True
+            _debug("navigation starting:", uri[:80])
+            if uri.startswith(prefix) and not done.is_set():
+                args.Cancel = True                        # don't let Windows hand it to PrusaSlicer
                 got["url"] = uri
                 done.set()
+                close_soon()
 
-        core.NavigationStarting += on_start
-        return True
+        control.NavigationStarting += on_start
+        _debug("WebView2 hook attached")
 
     def watch():
-        hooked = False
+        """Fallback for other backends (macOS WKWebView): poll the current URL; also the timeout."""
         deadline = time.monotonic() + timeout
         while not done.is_set() and time.monotonic() < deadline:
-            if not hooked:
-                hooked = hook_webview2()
-            try:
-                url = win.get_current_url() or ""     # fallback (macOS / other backends)
-            except Exception:
-                url = ""
+            url = _safe(win.get_current_url) or ""
             if url.startswith(prefix):
                 got["url"] = url
                 break
-            done.wait(0.1)
-        try:
-            win.destroy()
-        except Exception:
-            pass
+            done.wait(0.2)
+        close_soon()
 
-    win.events.closed += lambda: done.set()
+    win.events.before_show += attach_webview2
+    win.events.closed += done.set
     webview.start(watch, private_mode=True)
+    _debug("window closed, got:", got.get("url"))
     return got.get("url")
+
+
+def _safe(fn):
+    try:
+        return fn()
+    except Exception:
+        return None
 
 
 def main() -> int:
