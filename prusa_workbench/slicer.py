@@ -17,6 +17,7 @@ import time
 from pathlib import Path
 
 from .config import CACHE_DIR, PRUSASLICER
+from .osutil import no_window
 
 PROGRESS = re.compile(r"^\d+ => |^Slicing result exported|^Output for your request is written")
 
@@ -26,7 +27,8 @@ class SlicerError(RuntimeError):
 
 
 def run(args: list[str], timeout: float = 900) -> subprocess.CompletedProcess:
-    return subprocess.run([*PRUSASLICER, *args], capture_output=True, text=True, timeout=timeout)
+    return subprocess.run([*PRUSASLICER, *args], capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", timeout=timeout, **no_window())
 
 
 def messages(proc: subprocess.CompletedProcess) -> list[str]:
@@ -46,7 +48,7 @@ def profiles(printer: str) -> dict:
     proc = run(["--query-print-filament-profiles", "--printer-profile", printer, "--output", str(out)], timeout=120)
     if not out.exists():
         raise SlicerError(f"could not list profiles for printer {printer!r}: {' '.join(messages(proc)) or proc.returncode}")
-    data = json.loads(out.read_text())
+    data = json.loads(out.read_text(encoding="utf-8"))
     return {
         "printer": printer,
         "print_profiles": [
@@ -69,7 +71,7 @@ def resolved_config(printer: str, print_profile: str, filament: str) -> dict[str
     if not out.exists():
         raise SlicerError(f"unknown profile combination (printer {printer!r}, print {print_profile!r}, "
                           f"filament {filament!r}): {' '.join(messages(proc)) or proc.returncode}")
-    return parse_ini(out.read_text())
+    return parse_ini(out.read_text(encoding="utf-8", errors="replace"))
 
 
 def parse_ini(text: str) -> dict[str, str]:

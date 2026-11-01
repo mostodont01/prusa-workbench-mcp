@@ -30,6 +30,7 @@ import mimetypes
 import os
 import re
 import subprocess
+import sys
 import threading
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -37,6 +38,7 @@ from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
 from .. import connect, sendfile, trash
+from ..osutil import LINUX, detached
 from ..gcode import parse_gcode
 
 APP = "prusa-workbench-viewer"
@@ -44,6 +46,11 @@ STATIC = Path(__file__).parent / "static"
 _NAME = re.compile(r"^[^/\\]+$")
 REPO = Path(__file__).resolve().parents[2]
 GTK_PYTHON = os.environ.get("PRUSA_WORKBENCH_GTK_PYTHON", "/usr/bin/python3")
+
+
+def login_python() -> str:
+    """Linux: the system python3 (GTK + WebKit). Windows/macOS: this python (pywebview)."""
+    return GTK_PYTHON if LINUX and os.path.exists(GTK_PYTHON) else sys.executable
 
 
 class Login:
@@ -59,9 +66,9 @@ class Login:
                 return {"started": False, "running": True}
             env = dict(os.environ, PYTHONPATH=str(REPO))
             self.result = None
-            self.proc = subprocess.Popen([GTK_PYTHON, "-m", "prusa_workbench.connect_login"], cwd=REPO, env=env,
+            self.proc = subprocess.Popen([login_python(), "-m", "prusa_workbench.connect_login"], cwd=REPO, env=env,
                                          stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                         text=True, start_new_session=True)
+                                         text=True, encoding="utf-8", errors="replace", **detached())
             threading.Thread(target=self._wait, args=(self.proc,), daemon=True).start()
             return {"started": True, "running": True}
 
@@ -146,7 +153,7 @@ class Jobs:
     @staticmethod
     def _read_json(f: Path) -> dict | None:
         try:
-            data = json.loads(f.read_text())
+            data = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
         return data if isinstance(data, dict) else None
@@ -285,6 +292,8 @@ def make_handler(jobs: Jobs, login: Login):
                     ctype = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
                     if f.suffix == ".js":
                         ctype = "text/javascript"
+                    elif f.suffix == ".webmanifest":
+                        ctype = "application/manifest+json"
                     return self._file(f, ctype)
                 return self._error(HTTPStatus.NOT_FOUND)
             except (BrokenPipeError, ConnectionResetError):

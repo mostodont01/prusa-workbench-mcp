@@ -18,6 +18,8 @@ dependencies = [
     "networkx",       # 3MF loading in trimesh
     "pillow>=11.3",   # thumbnails + previews (QOI)
     "rtree",          # ray casting (paint_supports small_gaps_mm)
+    "send2trash; sys_platform != 'linux'",   # deleted jobs to the recycle bin (Linux uses gio)
+    "pywebview; sys_platform != 'linux'",    # Prusa login window (Linux uses GTK + WebKit from the system)
 ]
 
 [project.optional-dependencies]

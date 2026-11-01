@@ -1,0 +1,83 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows (real PrusaSlicer)
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      PRUSASLICER_VERSION: "2.9.6"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+
+      - name: PrusaSlicer (portable zip) with the MINI profiles installed
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $zip = "PrusaSlicer-$env:PRUSASLICER_VERSION.zip"
+          gh release download "version_$env:PRUSASLICER_VERSION" -R prusa3d/PrusaSlicer -p $zip -D $env:RUNNER_TEMP
+          Expand-Archive (Join-Path $env:RUNNER_TEMP $zip) -DestinationPath (Join-Path $env:RUNNER_TEMP "ps")
+          $exe = Get-ChildItem (Join-Path $env:RUNNER_TEMP "ps") -Recurse -Filter prusa-slicer-console.exe | Select-Object -First 1
+          if (-not $exe) { throw "prusa-slicer-console.exe not found in $zip" }
+          # A fresh PrusaSlicer has no printer profiles "installed" (normally done by its config wizard):
+          # copy the Prusa vendor bundle and mark the MINI + one filament as installed.
+          $profiles = Join-Path $exe.DirectoryName "resources\profiles"
+          $data = Join-Path $env:APPDATA "PrusaSlicer"
+          New-Item -ItemType Directory -Force (Join-Path $data "vendor") | Out-Null
+          Copy-Item (Join-Path $profiles "PrusaResearch.ini") (Join-Path $data "vendor")
+          if (Test-Path (Join-Path $profiles "PrusaResearch")) { Copy-Item (Join-Path $profiles "PrusaResearch") (Join-Path $data "vendor") -Recurse }
+          @"
+          [presets]
+          filament = Prusament PLA @MINIIS
+          print = 0.20mm SPEED @MINIIS 0.4
+          printer = Original Prusa MINI & MINI+ Input Shaper
+
+          [filaments]
+          Prusament PLA @MINIIS = 1
+
+          [vendor:PrusaResearch]
+          model:MINIIS = 0.4
+          "@ -replace '(?m)^\s+', '' | Set-Content -Encoding utf8 (Join-Path $data "PrusaSlicer.ini")
+          "PRUSA_WORKBENCH_SLICER=$($exe.FullName)" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          & $exe.FullName --help | Select-Object -First 2
+
+      - name: Which PrusaSlicer the code finds
+        run: python -c "from prusa_workbench import config as c; print(c.PRUSASLICER, c.PRUSASLICER_CONFIG, c.selected_presets())"
+
+      - name: Tests (incl. real PrusaSlicer runs)
+        run: python -m pytest -v -rs
+
+      - name: Login window catches the prusaslicer:// redirect (WebView2)
+        continue-on-error: true
+        env:
+          PRUSA_WORKBENCH_GUI_TESTS: "1"
+        run: python -m pytest -v tests/test_login_window.py
+
+  linux:
+    name: Linux (fast tests, Python 3.11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: python -m pip install -e ".[dev]"
+      - name: Tests (no PrusaSlicer here)
+        run: python -m pytest -v -rs -m "not slicer"

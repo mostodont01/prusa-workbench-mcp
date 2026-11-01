@@ -54,7 +54,7 @@ def _write_private(path: Path, data: dict) -> None:
     os.chmod(path.parent, 0o700)
     tmp = path.with_suffix(".tmp")
     fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=1)
     tmp.replace(path)
 
@@ -67,7 +67,7 @@ def save_tokens(tokens: dict) -> None:
 
 def load_tokens() -> dict | None:
     try:
-        data = json.loads(TOKEN_FILE.read_text())
+        data = json.loads(TOKEN_FILE.read_text(encoding="utf-8"))
         return data if isinstance(data, dict) and data.get("refresh_token") else None
     except (OSError, ValueError):
         return None
@@ -79,7 +79,7 @@ def logout() -> None:
 
 def prefs() -> dict:
     try:
-        return json.loads(PREFS_FILE.read_text())
+        return json.loads(PREFS_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
 

@@ -29,7 +29,7 @@ def parse_gcode(path: Path) -> dict:
     meta: dict[str, str] = {}
     types: dict[str, int] = {}
     layers = 0
-    with path.open(errors="replace") as f:
+    with path.open(encoding="utf-8", errors="replace") as f:
         for line in f:
             if line.startswith(";TYPE:"):
                 t = line[6:].strip()
@@ -58,7 +58,7 @@ def parse_gcode(path: Path) -> dict:
 def thumbnail_specs(path: Path) -> list[tuple[int, int, str]]:
     """The printer profile's `thumbnails` setting from the G-code footer, e.g. [(16, 16, 'QOI'), (380, 285, 'PNG')]."""
     spec = ""
-    with path.open(errors="replace") as f:
+    with path.open(encoding="utf-8", errors="replace") as f:
         for line in f:
             if line.startswith("; thumbnails = "):
                 spec = line.split(" = ", 1)[1].strip()
@@ -101,7 +101,7 @@ def read_thumbnails(path: Path) -> list[tuple[int, int, str, bytes]]:
     import re
 
     out, cur, buf = [], None, []
-    with path.open(errors="replace") as f:
+    with path.open(encoding="utf-8", errors="replace") as f:
         for n, line in enumerate(f):
             m = re.match(r"^; thumbnail(?:_(\w+))? begin (\d+)x(\d+) \d+", line)
             if m:

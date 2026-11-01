@@ -11,12 +11,32 @@ is built and being tested, PrusaLink comes after.
 
 ## Setup
 
-Linux, Python 3.11+, PrusaSlicer as a Flatpak (`com.prusa3d.PrusaSlicer`) with your printer set up in it.
+You need Python 3.11+ and PrusaSlicer 2.9 with your printer set up in it (its config wizard). The code finds
+PrusaSlicer by itself: the Flatpak or `prusa-slicer` on Linux, `prusa-slicer-console.exe` in Program Files on
+Windows, `/Applications/PrusaSlicer.app` on macOS. Otherwise set `PRUSA_WORKBENCH_SLICER` to the executable (and
+`PRUSA_WORKBENCH_SLICER_CONFIG` to its config folder).
+
+**Linux**
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -e .
 claude mcp add -s user prusa-workbench -- "$PWD/.venv/bin/prusa-workbench-mcp"
 ```
+
+The Prusa Connect login window and the app window use GTK + WebKit from the system python3
+(`gir1.2-webkit2-4.1` on Debian/Ubuntu).
+
+**Windows** (PowerShell)
+
+```powershell
+py -3 -m venv .venv; .venv\Scripts\pip install -e .
+claude mcp add -s user prusa-workbench -- "$PWD\.venv\Scripts\prusa-workbench-mcp.exe"
+```
+
+On Windows the viewer runs in the browser: open http://127.0.0.1:8765 in Edge or Chrome (it opens by itself when
+Claude slices) and use **Install app** in the address bar to get it as its own window (it's a PWA). The Prusa
+Connect login window uses pywebview (Edge WebView2, part of Windows); deleted jobs go to the recycle bin.
+Tested on Windows by CI (GitHub Actions, real PrusaSlicer); macOS should work the same way but is untested.
 
 ## MCP server
 
@@ -48,7 +68,8 @@ of the profiles); both stay in the job folder next to `bed-N.gcode` and `bed-N.j
 python3 -m prusa_workbench.viewer --open        # http://127.0.0.1:8765, reads ~/print-jobs
 ```
 
-**As an app** (its own window and app-menu entry; Firefox on Linux can't install PWAs, so this uses GTK + WebKit):
+**As an app** on Linux (its own window and app-menu entry; Firefox on Linux can't install PWAs, so this uses
+GTK + WebKit; on Windows/macOS install the PWA from Edge/Chrome instead, see Setup):
 
 ```sh
 PYTHONPATH=$PWD /usr/bin/python3 -m prusa_workbench.app_window --install     # once; --uninstall removes it

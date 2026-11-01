@@ -13,6 +13,7 @@ import urllib.request
 from pathlib import Path
 
 from ..config import CACHE_DIR, JOBS_DIR, VIEWER_HOST, VIEWER_PORT
+from ..osutil import LINUX, detached, open_url
 
 URL = f"http://{VIEWER_HOST}:{VIEWER_PORT}/"
 REPO = Path(__file__).resolve().parents[2]
@@ -35,7 +36,7 @@ def ensure_running() -> bool:
     env = dict(os.environ, PYTHONPATH=str(REPO) + os.pathsep + os.environ.get("PYTHONPATH", ""))
     subprocess.Popen([sys.executable, "-m", "prusa_workbench.viewer", "--port", str(VIEWER_PORT),
                       "--host", VIEWER_HOST, "--jobs", str(JOBS_DIR)],
-                     stdin=subprocess.DEVNULL, stdout=log, stderr=log, cwd=REPO, env=env, start_new_session=True)
+                     stdin=subprocess.DEVNULL, stdout=log, stderr=log, cwd=REPO, env=env, **detached())
     for _ in range(50):
         if running():
             return True
@@ -58,7 +59,8 @@ GTK_PYTHON = os.environ.get("PRUSA_WORKBENCH_GTK_PYTHON", "/usr/bin/python3")
 
 
 def app_installed() -> bool:
-    if os.environ.get("PRUSA_WORKBENCH_OPEN") == "browser":
+    """The Linux app window (GTK). On Windows/macOS the viewer is installed as a PWA from the browser instead."""
+    if not LINUX or os.environ.get("PRUSA_WORKBENCH_OPEN") == "browser":
         return False
     data = Path(os.environ.get("XDG_DATA_HOME", "~/.local/share")).expanduser()
     return (data / "applications" / f"{APP_ID}.desktop").exists()
@@ -72,7 +74,7 @@ def open_ui() -> None:
         try:
             subprocess.Popen([GTK_PYTHON, "-m", "prusa_workbench.app_window"], cwd=REPO,
                              env=dict(os.environ, PYTHONPATH=str(REPO)), stdin=subprocess.DEVNULL,
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **detached())
             return
         except OSError:
             pass
@@ -80,10 +82,4 @@ def open_ui() -> None:
 
 
 def open_browser(url: str = URL) -> None:
-    for cmd in (["xdg-open", url], ["open", url]):
-        try:
-            subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             start_new_session=True)
-            return
-        except FileNotFoundError:
-            continue
+    open_url(url)

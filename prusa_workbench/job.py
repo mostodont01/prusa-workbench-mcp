@@ -137,14 +137,14 @@ class Job:
         f = folder / "job.json"
         if not f.exists():
             raise FileNotFoundError(f"no job {name!r} in {JOBS_DIR} (jobs made by hand have no job.json)")
-        return cls(folder, json.loads(f.read_text()))
+        return cls(folder, json.loads(f.read_text(encoding="utf-8")))
 
     @staticmethod
     def list() -> list[dict]:
         out = []
         for f in JOBS_DIR.glob("*/job.json"):
             try:
-                d = json.loads(f.read_text())
+                d = json.loads(f.read_text(encoding="utf-8"))
             except ValueError:
                 continue
             out.append({"name": f.parent.name, "modified": dt.datetime.fromtimestamp(f.stat().st_mtime).isoformat(timespec="minutes"),
@@ -155,7 +155,7 @@ class Job:
         data = {"printer": self.printer, "next_id": self.next_id,
                 "beds": [asdict(b) for b in self.beds], "objects": [asdict(o) for o in self.objects]}
         tmp = self.dir / "job.json.tmp"
-        tmp.write_text(json.dumps(data, indent=1) + "\n")
+        tmp.write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
         tmp.replace(self.dir / "job.json")
 
     # ---------- lookups ----------
@@ -359,7 +359,7 @@ class Job:
         if not f.exists():
             return {"status": "not sliced"}
         try:
-            info = json.loads(f.read_text())
+            info = json.loads(f.read_text(encoding="utf-8"))
         except ValueError:
             return {"status": "not sliced"}
         st = {"status": "failed" if info.get("error") else "sliced"}
@@ -420,7 +420,7 @@ class Job:
             placed = [(names[o.id], self.placed(o), o.settings, self.paint_for(o)) for o in objs]
         model, ini, out = (self.dir / f"{bed.name}{s}" for s in (".3mf", ".ini", ".gcode"))
         threemf.write(model, placed)
-        ini.write_text("".join(f"{k} = {v}\n" for k, v in bed.settings.items()) or "# no overrides\n")
+        ini.write_text("".join(f"{k} = {v}\n" for k, v in bed.settings.items()) or "# no overrides\n", encoding="utf-8")
         for stale in (".png", ".json", ".bgcode"):
             (self.dir / f"{bed.name}{stale}").unlink(missing_ok=True)
 
@@ -443,9 +443,9 @@ class Job:
                 info["thumbnails"] = True
             except Exception as e:  # thumbnails are nice to have, never fail the slice for them
                 info["warnings"].append(f"could not add thumbnails: {e}")
-        (self.dir / f"{bed.name}.log").write_text("\n".join(res["messages"]) + "\n")
+        (self.dir / f"{bed.name}.log").write_text("\n".join(res["messages"]) + "\n", encoding="utf-8")
         tmp = self.dir / f"{bed.name}.json.tmp"
-        tmp.write_text(json.dumps(info, indent=2) + "\n")
+        tmp.write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
         tmp.replace(self.dir / f"{bed.name}.json")
         return info
 

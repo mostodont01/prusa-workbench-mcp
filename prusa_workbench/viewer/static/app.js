@@ -933,6 +933,9 @@ delList.addEventListener('change', delUpdate);
 delAll.addEventListener('change', () => { delList.querySelectorAll('input').forEach((i) => { i.checked = delAll.checked; }); delUpdate(); });
 delBtn.addEventListener('click', doDelete);
 
+// Installable as an app (PWA) in Chrome/Edge, e.g. on Windows. Not needed in the Linux app window.
+if ('serviceWorker' in navigator && !appBridge) navigator.serviceWorker.register('/sw.js').catch(() => {});
+
 // ---------- start ----------
 
 async function start() {

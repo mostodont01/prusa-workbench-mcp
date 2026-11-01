@@ -23,7 +23,7 @@ class OnshapeError(RuntimeError):
 def _keys() -> tuple[str, str, str]:
     env = dict(os.environ)
     if not (env.get("ONSHAPE_ACCESS_KEY") and env.get("ONSHAPE_SECRET_KEY")) and ONSHAPE_ENV_FILE.exists():
-        for line in ONSHAPE_ENV_FILE.read_text().splitlines():
+        for line in ONSHAPE_ENV_FILE.read_text(encoding="utf-8").splitlines():
             m = re.match(r"^\s*(?:export\s+)?([A-Z_]+)\s*=\s*['\"]?([^'\"\n]*)['\"]?\s*$", line)
             if m:
                 env.setdefault(m.group(1), m.group(2))

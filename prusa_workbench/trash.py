@@ -1,9 +1,9 @@
 """Deleting jobs: to the desktop trash (recoverable), permanently only if there is no trash. Stdlib only."""
 from __future__ import annotations
 
-import shutil
-import subprocess
 from pathlib import Path
+
+from .osutil import trash
 
 
 def job_folder(jobs_root: Path, name: str) -> Path:
@@ -18,12 +18,4 @@ def job_folder(jobs_root: Path, name: str) -> Path:
 
 def delete_job(jobs_root: Path, name: str) -> str:
     """Returns 'trash' (recoverable from the desktop trash) or 'deleted' (no trash available)."""
-    d = job_folder(jobs_root, name)
-    try:
-        subprocess.run(["gio", "trash", str(d)], check=True, capture_output=True, timeout=60)
-        return "trash"
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        if not d.exists():
-            return "trash"
-        shutil.rmtree(d)
-        return "deleted"
+    return trash(job_folder(jobs_root, name))

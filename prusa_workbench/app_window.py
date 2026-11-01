@@ -45,7 +45,7 @@ def install() -> None:
         "Terminal=false\n"
         "Categories=Graphics;3DGraphics;Engineering;\n"
         f"StartupWMClass={APP_ID}\n"
-        "StartupNotify=true\n")
+        "StartupNotify=true\n", encoding="utf-8")
     for cmd in (["update-desktop-database", str(apps)], ["gtk-update-icon-cache", "-q", "-t", str(data / "icons" / "hicolor")]):
         try:
             subprocess.run(cmd, capture_output=True, timeout=30)
@@ -67,6 +67,11 @@ def main() -> int:
     ap.add_argument("--uninstall", action="store_true", help="remove from the app menu")
     ap.add_argument("--snapshot", metavar="PNG", help="(testing) render offscreen, save a picture, exit")
     args = ap.parse_args()
+    if not sys.platform.startswith("linux"):
+        print("The app window is for Linux (GTK + WebKit). On Windows/macOS open http://127.0.0.1:8765 in Edge or "
+              "Chrome and use 'Install app' (the viewer is a PWA): python -m prusa_workbench.viewer --open",
+              file=sys.stderr)
+        return 1
     if args.install:
         install()
         return 0
@@ -132,7 +137,7 @@ def main() -> int:
 
     def log(msg):
         if logf:
-            with open(logf, "a") as f:
+            with open(logf, "a", encoding="utf-8") as f:
                 f.write(msg + "\n")
 
     def show_tab(name: str, connect_url: str | None = None) -> None:

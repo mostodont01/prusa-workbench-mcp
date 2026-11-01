@@ -28,7 +28,7 @@ def prepare(job_dir: Path, bed: str, printer_extensions: list[str] | None = None
         except bgcode.BgcodeError:
             pass
     try:
-        info = json.loads(info_f.read_text())
+        info = json.loads(info_f.read_text(encoding="utf-8"))
         res = slicer.slice_3mf(model, ini, binf, info["printer"], info["print_profile"], info["filament"], binary=True)
         if not res["ok"]:
             return text, "text", f"could not make binary G-code ({res.get('error')}), sending text G-code"
