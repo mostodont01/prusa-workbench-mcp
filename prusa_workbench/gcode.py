@@ -1,8 +1,11 @@
 """Read the summary PrusaSlicer writes into its G-code (time, filament, objects, settings used)."""
 from __future__ import annotations
 
+import gzip
 import json
 import math
+import os
+import shutil
 from pathlib import Path
 
 # Settings shown in the viewer's info panel (and stored in bed-N.json), in display order.
@@ -114,3 +117,27 @@ def read_thumbnails(path: Path) -> list[tuple[int, int, str, bytes]]:
             elif n > 2000 and not cur:     # thumbnails are at the top
                 break
     return out
+
+
+def gz_path(path: Path) -> Path:
+    return path.with_name(path.name + ".gz")
+
+
+def fresh_gz(path: Path) -> Path | None:
+    """bed-N.gcode.gz if it is at least as new as the G-code."""
+    gz = gz_path(path)
+    try:
+        return gz if gz.stat().st_mtime >= path.stat().st_mtime else None
+    except OSError:
+        return None
+
+
+def write_gz(path: Path) -> Path:
+    """Write bed-N.gcode.gz next to the G-code (the viewer sends it to browsers: about 4x less data over mobile).
+    Made where the slicing happens, so a server that only holds the files never has to compress anything."""
+    gz = gz_path(path)
+    tmp = gz.with_name(f"{gz.name}.{os.getpid()}.tmp")
+    with path.open("rb") as src, gzip.GzipFile(tmp, "wb", compresslevel=6, mtime=0) as dst:
+        shutil.copyfileobj(src, dst, 1 << 20)
+    os.replace(tmp, gz)
+    return gz

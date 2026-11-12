@@ -27,7 +27,7 @@ from . import mesh as mz
 from . import render, slicer, threemf
 from .config import JOBS_DIR, SPACING
 
-OUTPUT_SUFFIXES = (".gcode", ".bgcode", ".json", ".3mf", ".ini", ".png", ".log")
+OUTPUT_SUFFIXES = (".gcode", ".gcode.gz", ".bgcode", ".json", ".3mf", ".ini", ".png", ".log")
 
 
 @dataclass
@@ -404,7 +404,8 @@ class Job:
         # remove outputs of beds that no longer exist
         names = {b.name for b in self.beds}
         for f in self.dir.glob("bed-*"):
-            if f.suffix in OUTPUT_SUFFIXES and f.stem not in names:
+            stem, dot, suffix = f.name.partition(".")
+            if dot + suffix in OUTPUT_SUFFIXES and stem not in names:
                 f.unlink()
         work = [b for b in targets if self.on_bed(b.name)]
         results = [{"bed": b.name, "skipped": "no objects on this bed"} for b in targets if not self.on_bed(b.name)]
@@ -421,7 +422,7 @@ class Job:
         model, ini, out = (self.dir / f"{bed.name}{s}" for s in (".3mf", ".ini", ".gcode"))
         threemf.write(model, placed)
         ini.write_text("".join(f"{k} = {v}\n" for k, v in bed.settings.items()) or "# no overrides\n", encoding="utf-8")
-        for stale in (".png", ".json", ".bgcode"):
+        for stale in (".png", ".json", ".bgcode", ".gcode.gz"):
             (self.dir / f"{bed.name}{stale}").unlink(missing_ok=True)
 
         res = slicer.slice_3mf(model, ini, out, self.printer, bed.print_profile, bed.filament)
@@ -443,6 +444,10 @@ class Job:
                 info["thumbnails"] = True
             except Exception as e:  # thumbnails are nice to have, never fail the slice for them
                 info["warnings"].append(f"could not add thumbnails: {e}")
+            try:
+                gc.write_gz(out)   # after the thumbnails: they are written into the G-code
+            except OSError as e:
+                info["warnings"].append(f"could not write the compressed G-code: {e}")
         (self.dir / f"{bed.name}.log").write_text("\n".join(res["messages"]) + "\n", encoding="utf-8")
         tmp = self.dir / f"{bed.name}.json.tmp"
         tmp.write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")

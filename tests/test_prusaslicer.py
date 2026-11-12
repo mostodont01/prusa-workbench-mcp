@@ -88,6 +88,7 @@ def test_job_slice_and_send_file(jobs_dir, filament):
     assert not r.get("error"), r
     text = j.dir / "bed-1.gcode"
     assert len(gcode.read_thumbnails(text)) == len(gcode.thumbnail_specs(text)) > 0
+    assert gcode.fresh_gz(text)                      # the compressed copy for the viewer, made after the thumbnails
     f, kind, note = sendfile.prepare(j.dir, "bed-1", ["bgcode", "gcode"])
     assert kind == "binary", note
     _, blocks = bgcode.blocks(f.read_bytes())

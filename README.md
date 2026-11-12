@@ -101,6 +101,24 @@ Options: `--jobs DIR`, `--port N`, `--job NAME`.
 
 A job folder is just `~/print-jobs/<job>/bed-N.gcode` (+ optional `bed-N.json` summary). G-code dropped in by hand works too.
 
+### On your phone (Tailscale)
+
+The viewer only listens on `127.0.0.1`; [Tailscale serve](https://tailscale.com/kb/1312/serve) puts it on your
+tailnet with HTTPS (not on the internet):
+
+```sh
+tailscale serve --bg 8765        # -> https://<machine>.<tailnet>.ts.net
+```
+
+Open that address in Chrome on the phone and use **Install app** to get it as an app. The server accepts the
+machine's own `ts.net` name only for requests Tailscale serve forwarded (it adds a `Tailscale-User-Login` header);
+other names: `PRUSA_WORKBENCH_TAILSCALE_HOSTS`. The viewer must be running (it starts when Claude slices, or run it
+yourself as above).
+
+Made for slow mobile data: slicing also writes `bed-N.gcode.gz` (about 4× smaller; made on the first request for
+older jobs), sent with `Content-Encoding: gzip`, and the app keeps the last 12 beds it opened on the device, so a bed
+loads from the network only once per version. The browser still parses the G-code itself.
+
 ## Prusa Connect
 
 Prusa Connect has no official upload API, so this does what PrusaSlicer does: log in to your Prusa Account with
@@ -112,7 +130,7 @@ PrusaSlicer's public OAuth client, then register the upload and PUT the file. It
 - It sends **binary G-code** (`.bgcode`, about a third of the size) when the printer takes it: PrusaSlicer makes
   it from the bed's saved inputs at send time, with our thumbnails added. The MINI's Wi-Fi is the slow part.
 - Tokens are kept in `~/.config/prusa-workbench/connect-tokens.json` (mode 600). **Log out** in the dialog deletes them.
-- The viewer only accepts these requests from `localhost` pages (custom header + Host check).
+- The viewer only accepts these requests from `localhost` pages or through Tailscale serve (custom header + Host check).
 
 ## Tests
 

@@ -7,7 +7,8 @@ the summary, overrides and warnings; for G-code dropped in by hand the summary i
     GET /api/ping                 {"app": "prusa-workbench-viewer", ...}  (lets the MCP server find a running viewer)
     GET /api/jobs                 jobs, newest first
     GET /api/jobs/<job>           beds of a job with their summaries
-    GET /files/<job>/<bed>.gcode  raw G-code (and <bed>.png thumbnails)
+    GET /files/<job>/<bed>.gcode  raw G-code (and <bed>.png thumbnails); gzipped (Content-Encoding) when the
+                                  browser takes it, from <bed>.gcode.gz (written when slicing, else made here once)
 
     Prusa Connect (sending is the user's decision, made here; nothing else in the project sends):
     GET  /api/connect             logged in? printers
@@ -20,8 +21,10 @@ the summary, overrides and warnings; for G-code dropped in by hand the summary i
     POST /api/send                {job, bed, printer_uuid, filename, action: upload|queue|print[, position]}
                                   upload (binary G-code when possible), then optionally queue it (print = first
                                   in the queue: starts once the file is on a printer a person has set READY)
-POST requests need the X-Workbench header (blocks cross-site form posts) and every /api request a local Host
-header (blocks DNS rebinding).
+POST requests need the X-Workbench header (blocks cross-site form posts) and every /api request a trusted Host
+header (blocks DNS rebinding): localhost, or this machine's Tailscale name (https://<machine>.<tailnet>.ts.net,
+from `tailscale serve --bg 8765`) when Tailscale serve forwarded it with a Tailscale-User-Login header (it sets
+that header itself, tailnet only). More names: PRUSA_WORKBENCH_TAILSCALE_HOSTS="a.ts.net,b.ts.net".
 """
 from __future__ import annotations
 
@@ -39,6 +42,7 @@ from urllib.parse import unquote, urlsplit
 
 from .. import connect, sendfile, trash
 from ..osutil import LINUX, detached
+from .. import gcode as gc
 from ..gcode import parse_gcode
 
 APP = "prusa-workbench-viewer"
@@ -46,6 +50,20 @@ STATIC = Path(__file__).parent / "static"
 _NAME = re.compile(r"^[^/\\]+$")
 REPO = Path(__file__).resolve().parents[2]
 GTK_PYTHON = os.environ.get("PRUSA_WORKBENCH_GTK_PYTHON", "/usr/bin/python3")
+
+
+def tailscale_hosts() -> set[str]:
+    """This machine's MagicDNS name(s), e.g. {"otos-laptop.tail123bf0.ts.net"}; empty without Tailscale."""
+    hosts = {h.strip().lower().rstrip(".") for h in os.environ.get("PRUSA_WORKBENCH_TAILSCALE_HOSTS", "").split(",")
+             if h.strip()}
+    try:
+        out = subprocess.run(["tailscale", "status", "--json"], capture_output=True, timeout=5, check=True).stdout
+        d = json.loads(out)
+        names = [d.get("Self", {}).get("DNSName") or ""] + list(d.get("CertDomains") or [])
+        hosts |= {n.lower().rstrip(".") for n in names if n}
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+    return hosts
 
 
 def login_python() -> str:
@@ -103,6 +121,17 @@ class Jobs:
         self.root = root
         self._cache: dict[Path, tuple[float, dict]] = {}
         self._lock = threading.Lock()
+        self._gz_lock = threading.Lock()
+
+    def gz(self, gcode: Path) -> Path | None:
+        """The fresh bed-N.gcode.gz, compressed here if the slicer side didn't (older jobs, G-code added by hand)."""
+        if hit := gc.fresh_gz(gcode):
+            return hit
+        with self._gz_lock:
+            try:
+                return gc.fresh_gz(gcode) or gc.write_gz(gcode)
+            except OSError:
+                return None
 
     def job_dir(self, name: str) -> Path | None:
         if not _NAME.match(name) or name.startswith("."):
@@ -131,7 +160,9 @@ class Jobs:
         for stem, f in self._bed_files(d).items():
             st = f.stat()
             if f.suffix == ".gcode":
-                bed = {"name": stem, "gcode": f"/files/{name}/{f.name}", "mtime": st.st_mtime, "size": st.st_size}
+                # ?v= changes with the file: the page's service worker caches G-code by this URL
+                bed = {"name": stem, "gcode": f"/files/{name}/{f.name}?v={st.st_mtime_ns}", "mtime": st.st_mtime,
+                       "size": st.st_size}
                 bed.update(self._summary(f, st.st_mtime))
                 png = f.with_suffix(".png")
                 if png.exists() and png.stat().st_mtime >= st.st_mtime - 5:
@@ -174,7 +205,7 @@ class Jobs:
         return info
 
 
-def make_handler(jobs: Jobs, login: Login):
+def make_handler(jobs: Jobs, login: Login, ts_hosts: set[str] = frozenset()):
     show = {"seq": 0, "job": None}
     show_lock = threading.Lock()
 
@@ -182,8 +213,11 @@ def make_handler(jobs: Jobs, login: Login):
         server_version = APP
 
         def _local(self) -> bool:
-            host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]")
-            return host in ("127.0.0.1", "localhost", "::1")
+            host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]").lower().rstrip(".")
+            if host in ("127.0.0.1", "localhost", "::1"):
+                return True
+            # through `tailscale serve`: our own ts.net name, and a tailnet user (serve sets this header itself)
+            return host in ts_hosts and bool(self.headers.get("Tailscale-User-Login"))
 
         def do_POST(self):
             path = urlsplit(self.path).path
@@ -283,8 +317,13 @@ def make_handler(jobs: Jobs, login: Login):
                     if len(parts) == 2 and parts[1].endswith((".gcode", ".png")) and _NAME.match(parts[1]):
                         d = jobs.job_dir(parts[0])
                         if d and (d / parts[1]).is_file():
-                            ctype = "image/png" if parts[1].endswith(".png") else "text/plain; charset=utf-8"
-                            return self._file(d / parts[1], ctype)
+                            f = d / parts[1]
+                            if f.suffix == ".png":
+                                return self._file(f, "image/png")
+                            accept = self.headers.get("Accept-Encoding") or ""
+                            if "gzip" in accept and (gz := jobs.gz(f)):
+                                return self._file(gz, "text/plain; charset=utf-8", encoding="gzip")
+                            return self._file(f, "text/plain; charset=utf-8", encoding="identity")
                     return self._error(HTTPStatus.NOT_FOUND)
                 rel = "index.html" if path in ("/", "") else path.lstrip("/")
                 f = (STATIC / rel).resolve()
@@ -308,9 +347,13 @@ def make_handler(jobs: Jobs, login: Login):
             self.end_headers()
             self.wfile.write(body)
 
-        def _file(self, f: Path, ctype: str):
+        def _file(self, f: Path, ctype: str, encoding: str | None = None):
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", ctype)
+            if encoding:   # G-code: gzip or identity, chosen by Accept-Encoding
+                self.send_header("Vary", "Accept-Encoding")
+                if encoding != "identity":
+                    self.send_header("Content-Encoding", encoding)
             self.send_header("Content-Length", str(f.stat().st_size))
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
@@ -325,4 +368,4 @@ def make_handler(jobs: Jobs, login: Login):
 
 
 def serve(jobs_dir: Path, host: str = "127.0.0.1", port: int = 8765) -> ThreadingHTTPServer:
-    return ThreadingHTTPServer((host, port), make_handler(Jobs(jobs_dir), Login()))
+    return ThreadingHTTPServer((host, port), make_handler(Jobs(jobs_dir), Login(), tailscale_hosts()))

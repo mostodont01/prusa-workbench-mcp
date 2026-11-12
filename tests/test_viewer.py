@@ -56,6 +56,37 @@ def test_send_needs_header_and_local_host(viewer):
     assert _req(viewer + "/api/connect", headers={"Host": "evil.example"})[0] == 403     # DNS rebinding
 
 
+def test_gcode_gzipped_when_accepted(viewer, tmp_path):
+    import gzip
+    st, body = _req(viewer + "/api/jobs/2026-01-01-job")
+    url = next(b for b in json.loads(body)["beds"] if b["name"] == "bed-1")["gcode"]
+    assert "?v=" in url                                                   # versioned: the service worker caches by it
+    raw = (tmp_path / "2026-01-01-job/bed-1.gcode").read_bytes()
+    req = urllib.request.Request(viewer + url, headers={"Accept-Encoding": "gzip"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        assert r.headers["Content-Encoding"] == "gzip" and gzip.decompress(r.read()) == raw
+    assert (tmp_path / "2026-01-01-job/bed-1.gcode.gz").exists()          # made once, then reused
+    with urllib.request.urlopen(viewer + url, timeout=10) as r:          # no Accept-Encoding: plain
+        assert r.headers.get("Content-Encoding") is None and r.read() == raw
+
+
+def test_tailscale_host_needs_serve_header(tmp_path):
+    import os
+    os.environ["PRUSA_WORKBENCH_TAILSCALE_HOSTS"] = "me.tail1.ts.net"
+    try:
+        httpd = serve(tmp_path, port=0)
+    finally:
+        del os.environ["PRUSA_WORKBENCH_TAILSCALE_HOSTS"]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{httpd.server_address[1]}/api/jobs"
+    try:
+        assert _req(url, headers={"Host": "me.tail1.ts.net"})[0] == 403                           # not via serve
+        assert _req(url, headers={"Host": "other.ts.net", "Tailscale-User-Login": "a@b"})[0] == 403
+        assert _req(url, headers={"Host": "me.tail1.ts.net", "Tailscale-User-Login": "a@b"})[0] == 200
+    finally:
+        httpd.shutdown()
+
+
 NODE_HARNESS = """
 const fs = require('fs');
 const src = fs.readFileSync(process.argv[1], 'utf8');
