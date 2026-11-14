@@ -27,6 +27,7 @@
     <button id="deleteJobs" class="ghost" title="Delete jobs (they go to the trash)">Delete…</button>
     <nav id="tabs" aria-label="Beds"></nav>
     <div class="spacer"></div>
+    <button id="usb" disabled title="Copy the G-code to a USB stick (works without Prusa Connect)">Save to USB</button>
     <button id="send" disabled title="Upload this bed's G-code to a printer through Prusa Connect">Send to printer</button>
   </header>
 
@@ -66,6 +67,14 @@
       <h2 id="sendTitle">Send to printer</h2>
       <div id="sendBody"></div>
       <div class="actions" id="sendActions"></div>
+    </form>
+  </dialog>
+
+  <dialog id="usbDialog" aria-labelledby="usbTitle">
+    <form method="dialog">
+      <h2 id="usbTitle">Save to USB stick</h2>
+      <div id="usbBody"></div>
+      <div class="actions" id="usbActions"></div>
     </form>
   </dialog>
 

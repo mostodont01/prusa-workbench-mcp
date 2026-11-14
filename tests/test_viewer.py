@@ -162,3 +162,38 @@ def test_show_job_request(viewer):
     assert st == 200 and json.loads(res)["seq"] == 1
     assert _req(viewer + "/api/show", "POST", {"X-Workbench": "1"}, json.dumps({"job": "nope"}).encode())[0] == 404
     assert json.loads(_req(viewer + "/api/show")[1]) == {"seq": 1, "job": "2026-01-01-job"}
+
+
+def test_usb_lsblk_parsing():
+    from prusa_workbench.usb import _lsblk_drives
+    data = {"blockdevices": [
+        {"path": "/dev/loop0", "mountpoint": "/snap/core/1", "rm": False, "type": "loop"},
+        {"path": "/dev/nvme0n1", "mountpoint": None, "rm": False, "tran": "nvme", "type": "disk", "children": [
+            {"path": "/dev/nvme0n1p2", "mountpoint": "/", "rm": False, "type": "part"}]},
+        {"path": "/dev/sdb", "mountpoint": None, "rm": True, "tran": "usb", "type": "disk", "children": [
+            {"path": "/dev/sdb1", "mountpoint": "/media/me/STICK", "rm": False, "label": "STICK", "type": "part"}]},
+    ]}
+    assert _lsblk_drives(data) == [{"mount": "/media/me/STICK", "label": "STICK", "device": "/dev/sdb1"}]
+
+
+def test_usb_copy(viewer, tmp_path, monkeypatch):
+    from prusa_workbench import usb
+    stick = tmp_path / "stick"
+    stick.mkdir()
+    monkeypatch.setattr(usb, "_linux", lambda: [{"mount": str(stick), "label": "STICK", "device": None}])
+    monkeypatch.setattr(usb, "_windows", usb._linux)
+    monkeypatch.setattr(usb, "_macos", usb._linux)
+    st, body = _req(viewer + "/api/usb")
+    assert st == 200 and json.loads(body)[0]["label"] == "STICK"
+    req = {"job": "2026-01-01-job", "bed": "bed-1", "mount": str(stick), "filename": "My part-bed-1", "binary": True}
+    assert _req(viewer + "/api/usb/copy", "POST", {}, json.dumps(req).encode())[0] == 403      # needs the header
+    st, body = _req(viewer + "/api/usb/copy", "POST", {"X-Workbench": "1"}, json.dumps(req).encode())
+    res = json.loads(body)
+    # no slicing inputs in this job -> falls back to the text G-code, and says so
+    assert res["ok"] and res["format"] == "text" and res["note"] and res["name"] == "My part-bed-1.gcode"
+    assert (stick / "My part-bed-1.gcode").read_text().startswith(";LAYER_CHANGE")
+    assert not list(stick.glob("*.part"))
+    # only drives that drives() lists can be written to
+    bad = dict(req, mount=str(tmp_path))
+    res = json.loads(_req(viewer + "/api/usb/copy", "POST", {"X-Workbench": "1"}, json.dumps(bad).encode())[1])
+    assert not res["ok"] and "not connected" in res["error"]

@@ -21,6 +21,11 @@ the summary, overrides and warnings; for G-code dropped in by hand the summary i
     POST /api/send                {job, bed, printer_uuid, filename, action: upload|queue|print[, position]}
                                   upload (binary G-code when possible), then optionally queue it (print = first
                                   in the queue: starts once the file is on a printer a person has set READY)
+
+    USB stick (when Prusa Connect is down):
+    GET  /api/usb                 mounted removable drives
+    POST /api/usb/copy            {job, bed, mount, filename, binary} -> file written to the stick's root
+    POST /api/usb/eject           {mount}
 POST requests need the X-Workbench header (blocks cross-site form posts) and every /api request a trusted Host
 header (blocks DNS rebinding): localhost, or this machine's Tailscale name (https://<machine>.<tailnet>.ts.net,
 from `tailscale serve --bg 8765`) when Tailscale serve forwarded it with a Tailscale-User-Login header (it sets
@@ -40,7 +45,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-from .. import connect, sendfile, trash
+from .. import connect, sendfile, trash, usb
 from ..osutil import LINUX, detached
 from .. import gcode as gc
 from ..gcode import parse_gcode
@@ -233,6 +238,10 @@ def make_handler(jobs: Jobs, login: Login, ts_hosts: set[str] = frozenset()):
                     return self._json({"logged_in": False})
                 if path == "/api/send":
                     return self._send(body)
+                if path == "/api/usb/copy":
+                    return self._usb_copy(body)
+                if path == "/api/usb/eject":
+                    return self._json(usb.eject(str(body.get("mount", ""))))
                 if path == "/api/show":
                     if not jobs.job_dir(str(body.get("job", ""))):
                         return self._json({"ok": False, "error": "no such job"}, HTTPStatus.NOT_FOUND)
@@ -290,6 +299,23 @@ def make_handler(jobs: Jobs, login: Login, ts_hosts: set[str] = frozenset()):
             connect.save_prefs(printer_uuid=uuid, action=action)
             return self._json({"ok": True, **res})
 
+        def _usb_copy(self, body: dict):
+            d = jobs.job_dir(str(body.get("job", "")))
+            bed = str(body.get("bed", ""))
+            g = d / f"{bed}.gcode" if d and _NAME.match(bed + ".gcode") else None
+            if not g or not g.is_file():
+                return self._json({"ok": False, "error": "no such G-code"}, HTTPStatus.NOT_FOUND)
+            try:
+                # binary unless asked for text (MINI firmware before 5.1 only reads text G-code)
+                f, kind, note = sendfile.prepare(d, bed, None if body.get("binary", True) else ["gcode"])
+                name = _safe_filename(str(body.get("filename") or f"{d.name}-{bed}"))
+                name = re.sub(r"\.(b?gcode)$", "", name, flags=re.I) + f.suffix
+                dst = usb.copy(f, str(body.get("mount", "")), name)
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)})
+            return self._json({"ok": True, "path": str(dst), "name": name, "format": kind,
+                               "note": note if body.get("binary", True) else None, "size": f.stat().st_size})
+
         def log_message(self, fmt, *args):  # quiet; errors still go through log_error
             pass
 
@@ -307,6 +333,8 @@ def make_handler(jobs: Jobs, login: Login, ts_hosts: set[str] = frozenset()):
                     return self._json(connect.status())
                 if path == "/api/connect/login":
                     return self._json(login.state())
+                if path == "/api/usb":
+                    return self._json(usb.drives())
                 if path == "/api/jobs":
                     return self._json(jobs.list())
                 if path.startswith("/api/jobs/"):

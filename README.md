@@ -96,6 +96,8 @@ Options: `--jobs DIR`, `--port N`, `--job NAME`.
 - **Send to printer** uploads through Prusa Connect (see below): all beds of the job in order (or just the shown
   bed), then just upload, add to the queue, or print now (first in the queue, bed-1 then bed-2…; printing starts
   once the printer is set READY, i.e. someone confirmed the bed is clear).
+- **Save to USB** copies the G-code to a USB stick instead (no Prusa Connect needed): all beds or the shown one,
+  binary `.bgcode` (MINI firmware 5.1+) or text `.gcode`, written to the stick's root and flushed, then ejected.
 - Side panel: thumbnail, print time, filament, profiles, settings used (● = changed from the profile), objects with
   their own settings, warnings.
 

@@ -390,6 +390,7 @@ function disposeEntry(c) {
 async function showBed() {
   const bed = state.job?.beds.find((b) => b.name === state.bed);
   document.getElementById('send').disabled = !(bed && bed.gcode);
+  document.getElementById('usb').disabled = !(bed && bed.gcode);
   if (state.shown) {
     for (const m of Object.values(state.shown.meshes)) if (m) scene.remove(m);
     state.shown = null;
@@ -527,7 +528,7 @@ function step(input, d) {
 }
 
 document.addEventListener('keydown', (ev) => {
-  if (document.getElementById('sendDialog').open || document.getElementById('deleteDialog').open) return;
+  if (['sendDialog', 'deleteDialog', 'usbDialog'].some((id) => document.getElementById(id).open)) return;
   const tag = ev.target.tagName;
   if (tag === 'SELECT' || (tag === 'INPUT' && ev.target.type !== 'checkbox')) return;
   const k = ev.shiftKey ? 10 : 1;
@@ -881,6 +882,113 @@ dlg.addEventListener('click', async (ev) => {
   else if (id === 'uploadBtn') doUpload();
   else if (id === 'retryBtn') openSend();
   else if (id === 'logoutBtn') { await post('/api/connect/logout'); renderLogin(); }
+});
+
+// ---------- save to USB stick ----------
+
+const usbDlg = document.getElementById('usbDialog');
+const usbBody = document.getElementById('usbBody');
+const usbActions = document.getElementById('usbActions');
+let usbTimer = null;
+function usbSet(body, actions) { usbBody.innerHTML = body; usbActions.innerHTML = actions; }
+function lsGet(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } }
+function lsSet(k, v) { try { localStorage.setItem(k, v); } catch { /* private window */ } }
+const gb = (n) => (n / 1e9).toFixed(1) + ' GB';
+
+async function usbDrives() {
+  return fetch('/api/usb', { cache: 'no-store' }).then((r) => r.json()).catch(() => []);
+}
+
+async function openUsb() {
+  const bed = currentBed();
+  if (!bed?.gcode) return;
+  usbDlg.showModal();
+  usbSet('<p><span class="spinner"></span>Looking for USB drives…</p>', '<button value="cancel">Cancel</button>');
+  renderUsbForm(bed, await usbDrives());
+}
+
+function renderUsbForm(bed, drives) {
+  clearTimeout(usbTimer);
+  if (!usbDlg.open) return;
+  if (!drives.length) {
+    usbSet('<p>No USB stick found. Plug one in; this updates by itself.</p>', '<button value="cancel">Cancel</button>');
+    usbTimer = setTimeout(async () => renderUsbForm(bed, await usbDrives()), 1500);
+    return;
+  }
+  const sendable = state.job.beds.filter((b) => b.gcode);
+  const many = sendable.length > 1;
+  const prevMount = document.getElementById('usbSel')?.value;
+  usbSet(`
+    <div class="what"><b>${esc(state.job.name)}</b>
+      ${many ? `<fieldset class="actionsel" style="margin:6px 0 0">
+        <label><input type="radio" name="usbWhat" value="all" checked> All ${sendable.length} beds</label>
+        <label><input type="radio" name="usbWhat" value="one"> Only ${esc(bed.name)}</label></fieldset>` : ''}</div>
+    <label class="field" for="usbSel">USB drive</label>
+    <select id="usbSel">${drives.map((d) => `<option value="${esc(d.mount)}" ${d.mount === prevMount ? 'selected' : ''}>
+      ${esc(d.label)} — ${gb(d.free)} free</option>`).join('')}</select>
+    <label class="field" for="usbName">File name</label>
+    <input type="text" id="usbName" value="${esc(state.job.name)}" spellcheck="false">
+    <p class="note" id="usbHint" style="margin-top:4px"></p>
+    <label style="display:block;margin-top:8px"><input type="checkbox" id="usbBinary" ${lsGet('usbBinary', '1') === '1' ? 'checked' : ''}>
+      Binary G-code (.bgcode, smaller; needs MINI firmware 5.1 or newer)</label>
+    <label style="display:block;margin-top:4px"><input type="checkbox" id="usbEject" ${lsGet('usbEject', '1') === '1' ? 'checked' : ''}>
+      Eject the stick when done</label>`,
+    `<button value="cancel">Cancel</button><button type="button" class="primary" id="usbCopyBtn">Save</button>`);
+  const update = () => {
+    const prefix = document.getElementById('usbName').value.trim() || state.job.name;
+    document.getElementById('usbHint').textContent = `Saved as ${usbBeds(bed).map((b) => `${prefix}-${b.name}`).join(', ')}`;
+  };
+  document.querySelectorAll('input[name=usbWhat]').forEach((r) => r.addEventListener('change', update));
+  document.getElementById('usbName').addEventListener('input', update);
+  update();
+}
+
+function usbBeds(bed) {
+  const one = document.querySelector('input[name=usbWhat]:checked')?.value === 'one';
+  return one || !document.querySelector('input[name=usbWhat]') ? [bed] : state.job.beds.filter((b) => b.gcode);
+}
+
+async function doUsbCopy() {
+  const bed = currentBed();
+  const beds = usbBeds(bed);
+  const sel = document.getElementById('usbSel');
+  const mount = sel.value, label = sel.selectedOptions[0]?.textContent.split(' — ')[0].trim() || 'the USB stick';
+  const prefix = document.getElementById('usbName').value.trim() || state.job.name;
+  const binary = document.getElementById('usbBinary').checked;
+  const eject = document.getElementById('usbEject').checked;
+  lsSet('usbBinary', binary ? '1' : '0');
+  lsSet('usbEject', eject ? '1' : '0');
+  const rows = beds.map((b) => ({ bed: b, status: 'waiting', r: null }));
+  const icon = { waiting: '·', sending: '<span class="spinner"></span>', ok: '<span class="ok">✓</span>', fail: '<span class="err">✗</span>' };
+  const list = () => `<ul class="plain sendrows">${rows.map((x) => `<li>${icon[x.status]} <b>${esc(x.bed.name)}</b>
+      ${x.r?.ok ? `<span class="note">${esc(x.r.name)}, ${(x.r.size / 1e6).toFixed(2)} MB</span>` : ''}
+      ${x.r?.note ? `<div class="warn">${esc(x.r.note)}</div>` : ''}
+      ${x.r && !x.r.ok ? `<div class="err">${esc(x.r.error)}</div>` : ''}</li>`).join('')}</ul>`;
+  for (let i = 0; i < rows.length; i++) {
+    rows[i].status = 'sending';
+    usbSet(`<p><span class="spinner"></span>Saving to ${esc(label)}…</p>${list()}`, '');
+    const r = await post('/api/usb/copy', { job: state.job.name, bed: rows[i].bed.name, mount,
+      filename: `${prefix}-${rows[i].bed.name}`, binary });
+    rows[i].r = r;
+    rows[i].status = r.ok ? 'ok' : 'fail';
+  }
+  const allOk = rows.every((x) => x.r.ok);
+  let tail = allOk ? '' : '<p class="warn">Not everything was saved, see above.</p>';
+  if (allOk && eject) {
+    usbSet(`<p><span class="spinner"></span>Ejecting ${esc(label)}…</p>${list()}`, '');
+    const e = await post('/api/usb/eject', { mount });
+    tail = e.ok ? '<p>Ejected: pull the stick out and plug it into the printer.</p>'
+      : `<p class="warn">Saved, but not ejected: ${esc(e.error)}</p>`;
+  } else if (allOk) tail = '<p>Saved. Eject the stick before pulling it out.</p>';
+  usbSet(`<p class="${allOk ? 'ok' : 'err'}">${allOk ? 'Saved to' : 'Problem saving to'} ${esc(label)}.</p>${list()}${tail}`,
+    `${allOk ? '' : '<button type="button" id="usbRetryBtn">Try again</button>'}<button value="cancel" class="primary">Done</button>`);
+}
+
+document.getElementById('usb').addEventListener('click', openUsb);
+usbDlg.addEventListener('close', () => clearTimeout(usbTimer));
+usbDlg.addEventListener('click', (ev) => {
+  if (ev.target.id === 'usbCopyBtn') doUsbCopy();
+  else if (ev.target.id === 'usbRetryBtn') openUsb();
 });
 
 // ---------- delete jobs ----------
