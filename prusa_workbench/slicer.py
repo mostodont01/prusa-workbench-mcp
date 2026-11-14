@@ -99,7 +99,8 @@ def options() -> dict[str, dict]:
     opts: dict[str, dict] = {}
     section, cur = "", None
     for line in proc.stdout.splitlines():
-        m = re.match(r"^ --([a-z0-9-]+)(?: ([A-Z,]+|N|X,Y))?(?:\s{2,}(.*))?$", line)
+        # options with aliases are listed as " --name, --alias, --alias2"; the first name is the real one
+        m = re.match(r"^ --([a-z0-9-]+)(?:, --[a-z0-9-]+)*(?: ([A-Z,]+|N|X,Y))?(?:\s{2,}(.*))?$", line)
         if m:
             cur = m.group(1).replace("-", "_")
             opts[cur] = {"section": section, "help": (m.group(3) or "").strip(), "value": m.group(2) or "on/off"}

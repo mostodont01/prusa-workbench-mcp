@@ -78,6 +78,12 @@ def test_setting_names_are_checked():
         slicer.check_settings({"brim_widht": 3})
 
 
+def test_options_with_aliases_are_known():
+    # listed as " --top-fill-pattern, --external-fill-pattern, --solid-fill-pattern" in --help-fff
+    assert slicer.check_settings({"top_fill_pattern": "concentric", "bottom_fill_pattern": "concentric"}) == \
+        {"top_fill_pattern": "concentric", "bottom_fill_pattern": "concentric"}
+
+
 def test_job_slice_and_send_file(jobs_dir, filament):
     """The whole path: job -> slice (text G-code with thumbnails) -> binary file to send, thumbnails copied."""
     j = Job.create("t", PRINTER, PRINT, filament)
